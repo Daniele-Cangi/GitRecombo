@@ -1,6 +1,6 @@
 # 🎯 GitRecombo - AI-Powered GitHub Repository Discovery
 
-**Ultra-intelligent repository discovery system with semantic search and recombination engine.**
+**Intelligent repository discovery system with semantic search and recombination engine.**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-brightgreen.svg)
