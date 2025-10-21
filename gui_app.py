@@ -579,8 +579,22 @@ with st.sidebar.expander("Advanced Weights", expanded=False):
 use_embeddings = st.sidebar.checkbox(
     "Use embeddings",
     value=True,  # 🔄 RIPRISTINATO a True - Ora puoi testare con AI embeddings!
-    help="Enable semantic similarity scoring with OpenAI (slower but more accurate - finds related concepts)"
+    help="Enable semantic similarity scoring (finds related concepts by meaning)"
 )
+
+if use_embeddings:
+    embedding_model = st.sidebar.selectbox(
+        "Embedding Model",
+        options=[
+            "gte-large-en-v1.5 (Local, 1.3GB, Score 65.4) 🏆",
+            "OpenAI text-embedding-3-small (Cloud, Score 62.3)",
+            "bge-large-en-v1.5 (Local, 1.3GB, Score 63.9)"
+        ],
+        index=0,
+        help="Choose embedding model: Local models are free and private, OpenAI is cloud-based"
+    )
+else:
+    embedding_model = None
 
 explore_longtail = st.sidebar.checkbox(
     "Explore long-tail",
@@ -625,6 +639,7 @@ if st.button("🚀 Start Discovery", disabled=st.session_state.running, type="pr
         "w_relevance": w_relevance,
         "w_diversity": w_diversity,
         "use_embeddings": use_embeddings,
+        "embedding_model": embedding_model if use_embeddings else None,
         "explore_longtail": explore_longtail,
         "goal": goal
     }
@@ -632,37 +647,51 @@ if st.button("🚀 Start Discovery", disabled=st.session_state.running, type="pr
     # Save config to temp file
     config_path = Path("gui_config.json")
     with open(config_path, "w", encoding='utf-8') as f:
-        json.dump(config, f, indent=2)
+        json.dump(config, f, indent=2, ensure_ascii=False)
     
     st.info(f"🔄 Running discovery with AI embeddings... Estimated time: ~{probe_limit // 5 + 3}-{probe_limit // 3 + 5} minutes")
     
-    # Simple progress indicators
-    progress_bar = st.progress(0)
+    # Real-time progress display
     status_text = st.empty()
+    output_container = st.expander("📜 Live Output", expanded=True)
+    output_text = output_container.empty()
     
-    # Run discovery - SEMPLIFICATO
+    # Run discovery with REAL-TIME output streaming
     try:
         import subprocess
         
-        status_text.text("Phase 1/3: Autonomous Discovery...")
-        progress_bar.progress(10)
+        status_text.text("🚀 Phase 1/3: Autonomous Discovery (finding repos)...")
         
-        # Launch discovery with simple run
-        result = subprocess.run(
+        # Launch discovery with streaming output
+        process = subprocess.Popen(
             ["python", "ultra_autonomous.py", "--config", str(config_path)],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             encoding='utf-8',
             errors='replace',
-            timeout=900  # 15 min timeout
+            bufsize=1,
+            universal_newlines=True
         )
         
-        progress_bar.progress(60)
-        status_text.text("Phase 2/3: Goal Refinement...")
+        # Stream output in real-time
+        output_lines = []
+        for line in process.stdout:
+            output_lines.append(line)
+            # Show last 30 lines
+            output_text.code('\n'.join(output_lines[-30:]), language='bash')
+            
+            # Update phase based on output
+            if "PHASE 2" in line or "GOAL REFINEMENT" in line:
+                status_text.text("🧠 Phase 2/3: Goal Refinement (GPT-5 analysis)...")
+            elif "PHASE 3" in line or "ENRICHMENT" in line:
+                status_text.text("📚 Phase 3/3: Fetching READMEs...")
+            elif "Loading embedding model" in line:
+                status_text.text("🔄 Loading embedding model (gte-large-en-v1.5)...")
         
-        if result.returncode == 0:
-            progress_bar.progress(80)
-            status_text.text("Phase 3/3: Recombination...")
+        process.wait()
+        
+        if process.returncode == 0:
+            status_text.text("✅ Discovery completed! Finding latest results...")
             
             # Find latest mission file
             mission_files = sorted(Path(".").glob("ultra_autonomous_*.json"))
@@ -672,33 +701,16 @@ if st.button("🚀 Start Discovery", disabled=st.session_state.running, type="pr
                 # Count repos
                 with open(mission_files[-1], 'r', encoding='utf-8') as f:
                     mission_data = json.load(f)
-                    repos_selected = len(mission_data.get('selected_repos', []))
+                    repos_selected = len(mission_data.get('sources', []))
                 
-                # Run recombination
-                recomb_result = subprocess.run(
-                    ["python", "ultra_recombine.py"],
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=300
-                )
-                
-                progress_bar.progress(100)
                 status_text.text("✅ Discovery completed!")
-                
-                if recomb_result.returncode == 0:
-                    st.success(f"🎉 Discovery completed! {repos_selected} repos selected.")
-                    st.balloons()
-                else:
-                    st.error(f"Recombination failed: {recomb_result.stderr}")
+                st.success(f"🎉 Discovery completed! {repos_selected} repos selected.")
+                st.balloons()
             else:
                 st.error("No mission file generated")
         else:
-            st.error(f"Discovery failed with exit code {result.returncode}")
+            st.error(f"Discovery failed with exit code {process.returncode}")
     
-    except subprocess.TimeoutExpired:
-        st.error("⏱️ Discovery timeout (15 minutes). Try reducing probe_limit or topics.")
     except Exception as e:
         st.error(f"Error: {str(e)}")
     

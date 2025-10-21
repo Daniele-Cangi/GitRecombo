@@ -41,8 +41,8 @@ class RateLimitState:
         if 'X-RateLimit-Reset' in headers:
             self.reset_time = float(headers['X-RateLimit-Reset'])
     
-    def should_wait(self, safety_margin: int = 3) -> Tuple[bool, float]:
-        """Check if we should wait before next request."""
+    def should_wait(self, safety_margin: int = 2) -> Tuple[bool, float]:
+        """Check if we should wait before next request. Only wait if CRITICAL (<=2 remaining)."""
         if self.remaining <= safety_margin:
             wait_time = max(0, self.reset_time - time.time())
             return True, wait_time

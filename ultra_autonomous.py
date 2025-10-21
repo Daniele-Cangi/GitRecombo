@@ -53,7 +53,7 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
     # Load config from file if provided (GUI mode)
     if config_file and os.path.exists(config_file):
         print(f"📂 Loading config from: {config_file}\n")
-        with open(config_file, 'r') as f:
+        with open(config_file, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
         topics = config.get("topics", [])
@@ -69,6 +69,7 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         w_relevance = config.get("w_relevance", 0.25)
         w_diversity = config.get("w_diversity", 0.10)
         use_embeddings = config.get("use_embeddings", True)
+        embedding_model_choice = config.get("embedding_model", None)
     else:
         # Default hardcoded config (CLI mode)
         topics = [
@@ -93,6 +94,26 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         w_health = 0.25
         w_relevance = 0.25
         w_diversity = 0.10
+        embedding_model_choice = None
+    
+    # Parse embedding model choice from GUI
+    if embedding_model_choice:
+        if "gte-large" in embedding_model_choice:
+            embed_provider = "sbert"
+            embed_model = "Alibaba-NLP/gte-large-en-v1.5"
+        elif "OpenAI" in embedding_model_choice:
+            embed_provider = "openai"
+            embed_model = "text-embedding-3-small"
+        elif "bge-large" in embedding_model_choice:
+            embed_provider = "sbert"
+            embed_model = "BAAI/bge-large-en-v1.5"
+        else:
+            embed_provider = "sbert"
+            embed_model = "Alibaba-NLP/gte-large-en-v1.5"
+    else:
+        # Default: use gte-large-en-v1.5 (best local model)
+        embed_provider = "sbert" if use_embeddings else None
+        embed_model = "Alibaba-NLP/gte-large-en-v1.5"
     
     # ====================================================================
     # PHASE 1: DISCOVERY CON DISCOVER.PY FULL MODE
@@ -119,8 +140,8 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         "require_ci": False,  # Non obbligatorio ma privilegiato
         "require_tests": False,
         "authorsig": True,  # Author reputation
-        "embed_provider": "openai" if use_embeddings else None,
-        "embed_model": "text-embedding-3-small",
+        "embed_provider": embed_provider,  # 🔄 SWITCHED to local gte-large-en-v1.5 by default
+        "embed_model": embed_model,  # 🏆 BINGO: Score 65.4, 1.3GB, 8K tokens
         "embed_max_chars": 8000,
         "goal": discovery_goal,
         "w_novelty": w_novelty,
@@ -220,28 +241,39 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
 
 {json.dumps(repos_summary, indent=2)}
 
-Based on their concepts, scores, and complementarity, generate an AMBITIOUS TECHNICAL GOAL that:
-1. Leverages the unique capabilities of these repos
-2. Creates something genuinely novel and impactful
-3. Is achievable in 90 days with these building blocks
-4. Addresses a real-world problem in AI/ML infrastructure
+Your mission: Analyze this COMBINATION and explain its breakthrough potential.
 
-Return JSON:
+Return JSON with:
 {{
-  "goal": "detailed technical goal statement",
-  "why_these_repos": "why this combination is powerful",
-  "expected_impact": "what breakthrough this enables"
+  "goal": "BRIEF statement (1-2 sentences, ~50 words). What to build with this combo.",
+  "why_these_repos": "EXTENSIVE technical analysis (400-600 words). Focus on:
+    - What NOVEL capabilities emerge from combining THESE specific repos?
+    - HOW do they integrate? (specific APIs, patterns, data flows)
+    - WHY is THIS combination better than alternatives?
+    - What was IMPOSSIBLE before but is now POSSIBLE?
+    - Cite concrete features from each repo
+    - Explain technical synergies in detail",
+  "expected_impact": "EXTENSIVE breakthrough analysis (400-600 words). Focus on:
+    - What NON-OBVIOUS innovations does this combo enable?
+    - What competitive advantages emerge from this recombination?
+    - What problems can ONLY be solved with this exact combination?
+    - Quantified outcomes with specific metrics
+    - Real-world use cases unlocked by this integration"
 }}
+
+CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repos + expected_impact). The goal should be minimal - just 1-2 sentences.
 """
     
-    print("⏳ Refining goal with GPT-5...\n")
+    print("⏳ Refining goal with CHATGPT-5...\n")
     
     completion = client.chat.completions.create(
-        model='gpt-5',
+        model='chatgpt-5',
         messages=[
             {"role": "system", "content": "You are an expert in AI/ML infrastructure and innovation strategy."},
             {"role": "user", "content": refinement_prompt}
         ],
+        max_completion_tokens=2000,  # Goal refinement: up to 2K tokens
+        temperature=0.7,
         response_format={"type": "json_object"}
     )
     
@@ -364,6 +396,7 @@ def main():
         print("   1. Review discovered repos and refined goal")
         print("   2. Run recombination:")
         print("      python ultra_recombine.py")
+        sys.exit(0)  # 🔥 FIX: Explicit success exit code
     else:
         print("\n❌ Discovery failed. Check errors above.")
         sys.exit(1)

@@ -133,11 +133,11 @@ def gh_get(url: str, token: str, params: Dict[str, Any] | None = None, retry: in
                 continue
             raise RuntimeError("GitHub rate limit exceeded after retries")
         
-        # Preventive wait if running low
-        if remaining < 10 and reset_time > 0:
+        # Preventive wait ONLY if really running low (2 or less)
+        if remaining <= 2 and reset_time > 0:
             wait = reset_time - time.time()
             if wait > 0:
-                print(f"[WARN]  Low rate limit ({remaining}). Preventive wait {int(wait)}s...")
+                print(f"[WARN]  Critical rate limit ({remaining}). Waiting {int(wait)}s...")
                 time.sleep(wait + 2)
         
         r.raise_for_status()
@@ -220,6 +220,7 @@ def has_ci(owner: str, repo: str, token: str) -> bool:
         return False
 
 def has_tests(owner: str, repo: str, token: str) -> bool:
+    """Check if repo has tests (uses 2 code_search calls)"""
     q1 = f"repo:{owner}/{repo} path:tests"
     q2 = f"repo:{owner}/{repo} filename:*test*"
     return (search_code(q1, token, 1) > 0) or (search_code(q2, token, 1) > 0)
@@ -232,6 +233,7 @@ def has_release(owner: str, repo: str, token: str) -> bool:
         return False
 
 def has_manifest(owner: str, repo: str, token: str) -> bool:
+    """Check if repo has manifest files (uses 1 code_search call)"""
     q = f"repo:{owner}/{repo} filename:pyproject.toml OR filename:package.json OR filename:Cargo.toml OR filename:go.mod"
     return search_code(q, token, 1) > 0
 
@@ -295,7 +297,12 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     token = params["token"]
     topics = params["topics"]
     days = int(params.get("days", 21))
-    licenses = set(s.strip() for s in params.get("licenses","MIT,Apache-2.0,BSD-3-Clause").split(",") if s.strip())
+    # FIX: Gestisce sia lista che stringa per le licenze
+    licenses_raw = params.get("licenses", "MIT,Apache-2.0,BSD-3-Clause")
+    if isinstance(licenses_raw, list):
+        licenses = set(s.strip() for s in licenses_raw if s.strip())
+    else:
+        licenses = set(s.strip() for s in licenses_raw.split(",") if s.strip())
     max_per_q = int(params.get("max", 12))
     explore_longtail = bool(params.get("explore_longtail", False))
     max_stars = params.get("max_stars")
@@ -342,20 +349,27 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     probe = candidates[:min(probe_limit, len(candidates))]
 
     # 2) Deep probes: topics, readme, health, author rep, concepts
+    print(f"\n🔍 Analyzing {len(probe)} repositories...")
     texts, keys = [], []
-    for c in probe:
+    for idx, c in enumerate(probe, 1):
         owner, repo = c["full_name"].split("/", 1)
+        print(f"[{idx}/{len(probe)}] {owner}/{repo}...", end=" ", flush=True)
+        
         c["topics"] = get_topics(owner, repo, token)
         c["readme_excerpt"] = get_readme_text(owner, repo, token, embed_max_chars) if (embed_provider or goal) else ""
         ci = has_ci(owner, repo, token)
         ts = has_tests(owner, repo, token)
         rel = has_release(owner, repo, token)
         man = has_manifest(owner, repo, token)
+        
         health = 0.25*(1 if ci else 0) + 0.25*(1 if ts else 0) + 0.25*(1 if rel else 0) + 0.25*(1 if man else 0)
         if require_ci and not ci: health = 0.0
         if require_tests and not ts: health = 0.0
         c["health_score"] = float(health)
         c["_drop"] = c["health_score"] < min_health
+        
+        print(f"health={health:.2f} ✓")
+        
         c["author_rep"] = author_rep(owner, token) if authorsig else 0.0
         c["concepts"] = extract_concepts(c.get("readme_excerpt","") or (c.get("description") or ""), topk=8)
         if embed_provider or goal:
