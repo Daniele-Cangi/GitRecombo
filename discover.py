@@ -333,14 +333,25 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1) Aggregate by novelty + license
     agg: Dict[str, Dict[str, Any]] = {}
+    exclude_processed = bool(params.get("exclude_processed", True))
+    # Always create cache instance so discovered data and markers can be persisted.
+    cache = get_repo_cache()
+    # Control whether to READ from cache (if False, force fresh GitHub fetches for readmes/metadata)
+    use_cache_reads = bool(params.get("use_cache", False))
+
     for q in queries:
         repos = search_repos(q, max_per_q, token)
         print(f"[DEBUG] Query returned {len(repos)} repos: {q[:60]}...")
         for r in repos:
+            # Skip repos that were already processed in previous runs when requested
+            if exclude_processed and cache and cache.is_processed(r.get("full_name")):
+                print(f"[SKIP] Already processed: {r.get('full_name')}")
+                continue
             key = r["full_name"]
             r["novelty_score"] = novelty_score(r)
             lic = (r.get("license") or "").strip() if r.get("license") else ""
-            if licenses and (not lic or lic not in licenses): continue
+            if licenses and (not lic or lic not in licenses):
+                continue
             if key not in agg or r["novelty_score"] > agg[key]["novelty_score"]:
                 agg[key] = r
 
@@ -356,7 +367,7 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
         print(f"[{idx}/{len(probe)}] {owner}/{repo}...", end=" ", flush=True)
         
         c["topics"] = get_topics(owner, repo, token)
-        c["readme_excerpt"] = get_readme_text(owner, repo, token, embed_max_chars) if (embed_provider or goal) else ""
+        c["readme_excerpt"] = get_readme_text(owner, repo, token, embed_max_chars, use_cache=use_cache_reads) if (embed_provider or goal) else ""
         ci = has_ci(owner, repo, token)
         ts = has_tests(owner, repo, token)
         rel = has_release(owner, repo, token)
@@ -369,7 +380,6 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
         c["_drop"] = c["health_score"] < min_health
         
         print(f"health={health:.2f} ✓")
-        
         c["author_rep"] = author_rep(owner, token) if authorsig else 0.0
         c["concepts"] = extract_concepts(c.get("readme_excerpt","") or (c.get("description") or ""), topk=8)
         if embed_provider or goal:
@@ -457,6 +467,15 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
         "concepts": s.get("concepts", [])[:8],
         "gem_score": round(float(s.get("_score", 0.0)), 4),
     } for s in selected]
+
+    # Mark selected repos as processed so future runs will avoid them if exclude_processed=True
+    try:
+        if cache:
+            for s in sources:
+                cache.mark_processed(s['name'], info={"goal": goal, "marked_by": "discover", "ts": time.time()})
+    except Exception:
+        # Non-fatal: processed marking shouldn't block discovery
+        pass
 
     nodes = [f"[{i+1}] {s['name']}" for i, s in enumerate(sources)]
     architecture_ascii = f"{'  →  '.join(nodes)}\n            ↓\n        [ Orchestrator ]"

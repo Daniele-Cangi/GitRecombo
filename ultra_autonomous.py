@@ -13,6 +13,7 @@ Discovery potenziato con discover.py full mode:
 import os
 import sys
 import json
+from copy import deepcopy
 from datetime import datetime
 
 # Fix Windows console encoding for emoji support
@@ -31,7 +32,98 @@ except ImportError:
 # Import discover module
 from discover import discover
 
-def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
+DEFAULT_DISCOVERY_CONFIG = {
+    "topics": [
+        "networking",
+        "database",
+        "devops",
+    ],
+    "goal": (
+        "Discover cutting-edge repositories in infrastructure and developer tooling that enable "
+        "robust, scalable, and maintainable software systems"
+    ),
+    "days": 90,
+    "licenses": ["MIT", "Apache-2.0", "BSD-3-Clause", "MPL-2.0"],
+    "max": 20,
+    "explore_longtail": False,
+    "max_stars": None,
+    "min_health": 0.25,
+    "probe_limit": 40,
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_diversity": 0.10,
+    "use_embeddings": True,
+    "embed_provider": "sbert",
+    "embedding_model": "Alibaba-NLP/gte-large-en-v1.5",
+    "require_ci": False,
+    "require_tests": False,
+    "authorsig": True,
+    "embed_max_chars": 8000,
+}
+
+
+def load_discovery_config(config_file: str | None) -> dict:
+    """Load discovery configuration merging GUI overrides with backend defaults."""
+    cfg = deepcopy(DEFAULT_DISCOVERY_CONFIG)
+    user_cfg = {}
+
+    if config_file and os.path.exists(config_file):
+        with open(config_file, 'r', encoding='utf-8') as f:
+            user_cfg = json.load(f) or {}
+
+    for key, value in (user_cfg or {}).items():
+        cfg[key] = value
+
+    cfg["topics"] = [t for t in cfg.get("topics", []) if isinstance(t, str) and t.strip()]
+    if isinstance(cfg.get("licenses"), str):
+        cfg["licenses"] = [s.strip() for s in cfg["licenses"].split(",") if s.strip()]
+
+    cfg["days"] = int(cfg.get("days", DEFAULT_DISCOVERY_CONFIG["days"]))
+    cfg["max"] = int(cfg.get("max", DEFAULT_DISCOVERY_CONFIG["max"]))
+    cfg["probe_limit"] = int(cfg.get("probe_limit", DEFAULT_DISCOVERY_CONFIG["probe_limit"]))
+    cfg["min_health"] = float(cfg.get("min_health", DEFAULT_DISCOVERY_CONFIG["min_health"]))
+    cfg["w_novelty"] = float(cfg.get("w_novelty", DEFAULT_DISCOVERY_CONFIG["w_novelty"]))
+    cfg["w_health"] = float(cfg.get("w_health", DEFAULT_DISCOVERY_CONFIG["w_health"]))
+    cfg["w_relevance"] = float(cfg.get("w_relevance", DEFAULT_DISCOVERY_CONFIG["w_relevance"]))
+    cfg["w_diversity"] = float(cfg.get("w_diversity", DEFAULT_DISCOVERY_CONFIG["w_diversity"]))
+    cfg["use_embeddings"] = bool(cfg.get("use_embeddings", DEFAULT_DISCOVERY_CONFIG["use_embeddings"]))
+    cfg["explore_longtail"] = bool(cfg.get("explore_longtail", DEFAULT_DISCOVERY_CONFIG["explore_longtail"]))
+    cfg["require_ci"] = bool(cfg.get("require_ci", DEFAULT_DISCOVERY_CONFIG["require_ci"]))
+    cfg["require_tests"] = bool(cfg.get("require_tests", DEFAULT_DISCOVERY_CONFIG["require_tests"]))
+    cfg["authorsig"] = bool(cfg.get("authorsig", DEFAULT_DISCOVERY_CONFIG["authorsig"]))
+    cfg["embed_max_chars"] = int(cfg.get("embed_max_chars", DEFAULT_DISCOVERY_CONFIG["embed_max_chars"]))
+
+    max_stars = cfg.get("max_stars")
+    try:
+        cfg["max_stars"] = int(max_stars) if max_stars is not None else None
+    except (TypeError, ValueError):
+        cfg["max_stars"] = None
+
+    embedding_choice = cfg.get("embedding_model_choice")
+    if embedding_choice:
+        if "gte-large" in embedding_choice:
+            cfg["embed_provider"] = "sbert"
+            cfg["embedding_model"] = "Alibaba-NLP/gte-large-en-v1.5"
+        elif "OpenAI" in embedding_choice:
+            cfg["embed_provider"] = "openai"
+            cfg["embedding_model"] = "text-embedding-3-small"
+        elif "bge-large" in embedding_choice:
+            cfg["embed_provider"] = "sbert"
+            cfg["embedding_model"] = "BAAI/bge-large-en-v1.5"
+
+    if not cfg["use_embeddings"]:
+        cfg["embed_provider"] = None
+        cfg["embedding_model"] = None
+    else:
+        cfg["embed_provider"] = cfg.get("embed_provider") or DEFAULT_DISCOVERY_CONFIG["embed_provider"]
+        cfg["embedding_model"] = cfg.get("embedding_model") or DEFAULT_DISCOVERY_CONFIG["embedding_model"]
+
+    cfg["goal"] = cfg.get("goal") or DEFAULT_DISCOVERY_CONFIG["goal"]
+
+    return cfg
+
+def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: bool = False):
     """
     Discovery ultra potenziato con discover.py full mode
     Supports loading config from JSON file for GUI integration
@@ -51,70 +143,31 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         return None
     
     # Load config from file if provided (GUI mode)
+    cfg = load_discovery_config(config_file)
     if config_file and os.path.exists(config_file):
         print(f"📂 Loading config from: {config_file}\n")
-        with open(config_file, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        topics = config.get("topics", [])
-        discovery_goal = config.get("goal", "")
-        days = config.get("days", 90)
-        licenses = config.get("licenses", "MIT,Apache-2.0,BSD-3-Clause,MPL-2.0")
-        max_repos = config.get("max", 20)
-        explore_longtail = config.get("explore_longtail", False)
-        min_health = config.get("min_health", 0.25)
-        probe_limit = config.get("probe_limit", 40)
-        w_novelty = config.get("w_novelty", 0.35)
-        w_health = config.get("w_health", 0.25)
-        w_relevance = config.get("w_relevance", 0.25)
-        w_diversity = config.get("w_diversity", 0.10)
-        use_embeddings = config.get("use_embeddings", True)
-        embedding_model_choice = config.get("embedding_model", None)
-    else:
-        # Default hardcoded config (CLI mode)
-        topics = [
-            "embedding",
-            "blockchain",
-            "data transfer",
-            "machine learning",
-            "P2P",
-            "gateway",
-        ]
-        discovery_goal = (
-            "Discover cutting-edge repositories in AI/ML infrastructure that enable "
-            "building local-first, privacy-preserving, real-time intelligent systems"
-        )
-        days = 90
-        licenses = "MIT,Apache-2.0,BSD-3-Clause,MPL-2.0"
-        max_repos = 20
-        explore_longtail = False
-        min_health = 0.25
-        probe_limit = 40
-        w_novelty = 0.35
-        w_health = 0.25
-        w_relevance = 0.25
-        w_diversity = 0.10
-        embedding_model_choice = None
-    
-    # Parse embedding model choice from GUI
-    if embedding_model_choice:
-        if "gte-large" in embedding_model_choice:
-            embed_provider = "sbert"
-            embed_model = "Alibaba-NLP/gte-large-en-v1.5"
-        elif "OpenAI" in embedding_model_choice:
-            embed_provider = "openai"
-            embed_model = "text-embedding-3-small"
-        elif "bge-large" in embedding_model_choice:
-            embed_provider = "sbert"
-            embed_model = "BAAI/bge-large-en-v1.5"
-        else:
-            embed_provider = "sbert"
-            embed_model = "Alibaba-NLP/gte-large-en-v1.5"
-    else:
-        # Default: use gte-large-en-v1.5 (best local model)
-        embed_provider = "sbert" if use_embeddings else None
-        embed_model = "Alibaba-NLP/gte-large-en-v1.5"
-    
+
+    topics = cfg["topics"]
+    discovery_goal = cfg["goal"]
+    days = cfg["days"]
+    licenses = cfg["licenses"]
+    max_repos = cfg["max"]
+    explore_longtail = cfg["explore_longtail"]
+    min_health = cfg["min_health"]
+    probe_limit = cfg["probe_limit"]
+    w_novelty = cfg["w_novelty"]
+    w_health = cfg["w_health"]
+    w_relevance = cfg["w_relevance"]
+    w_diversity = cfg["w_diversity"]
+    use_embeddings = cfg["use_embeddings"]
+    embed_provider = cfg["embed_provider"]
+    embed_model = cfg["embedding_model"]
+    max_stars = cfg["max_stars"]
+    require_ci = cfg["require_ci"]
+    require_tests = cfg["require_tests"]
+    authorsig = cfg["authorsig"]
+    embed_max_chars = cfg["embed_max_chars"]
+
     # ====================================================================
     # PHASE 1: DISCOVERY CON DISCOVER.PY FULL MODE
     # ====================================================================
@@ -135,14 +188,14 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         "licenses": licenses,
         "max": max_repos,
         "explore_longtail": explore_longtail,
-        "max_stars": None,  # Nessun cap
+        "max_stars": max_stars,
         "min_health": min_health,
-        "require_ci": False,  # Non obbligatorio ma privilegiato
-        "require_tests": False,
-        "authorsig": True,  # Author reputation
-        "embed_provider": embed_provider,  # 🔄 SWITCHED to local gte-large-en-v1.5 by default
-        "embed_model": embed_model,  # 🏆 BINGO: Score 65.4, 1.3GB, 8K tokens
-        "embed_max_chars": 8000,
+        "require_ci": require_ci,
+        "require_tests": require_tests,
+        "authorsig": authorsig,
+        "embed_provider": embed_provider,
+        "embed_model": embed_model,
+        "embed_max_chars": embed_max_chars,
         "goal": discovery_goal,
         "w_novelty": w_novelty,
         "w_health": w_health,
@@ -150,6 +203,10 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None):
         "w_author": 0.05,     # Trust signal
         "w_diversity": w_diversity,
         "probe_limit": probe_limit,
+        # If no_cache is True, don't exclude processed repos; otherwise exclude previously processed
+        "exclude_processed": (not no_cache),
+        # use_cache is the opposite of no_cache: when False we bypass cache reads
+        "use_cache": (not no_cache),
     }
     
     print("⚙️ Discovery parameters:")
@@ -264,10 +321,10 @@ Return JSON with:
 CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repos + expected_impact). The goal should be minimal - just 1-2 sentences.
 """
     
-    print("⏳ Refining goal with CHATGPT-5...\n")
+    print("⏳ Refining goal with chatgpt-4o-latest...\n")
     
     completion = client.chat.completions.create(
-        model='chatgpt-5',
+        model='chatgpt-4o-latest',  # 🔥 FIX: Actual OpenAI model name
         messages=[
             {"role": "system", "content": "You are an expert in AI/ML infrastructure and innovation strategy."},
             {"role": "user", "content": refinement_prompt}
@@ -385,11 +442,42 @@ def main():
                         help='Disable embeddings (faster but less precise)')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to JSON config file (for GUI integration)')
+    parser.add_argument('--no-cache', action='store_true',
+                        help='Do not consult or mark processed repos; force fresh discovery')
+    parser.add_argument('--clear-processed', action='store_true',
+                        help='Clear the processed repos markers before running')
+    parser.add_argument('--search-only', action='store_true',
+                        help='Run only the discovery/search phase and exit (no LLM refinement)')
     args = parser.parse_args()
-    
+
     use_embeddings = not args.no_embeddings
-    
-    mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config)
+    no_cache = bool(args.no_cache)
+    clear_processed = bool(args.clear_processed)
+
+    # If requested, clear processed markers (non-destructive to repo metadata)
+    if clear_processed:
+        try:
+            from repo_cache import RepoCache
+            rc = RepoCache()
+            deleted = rc.purge_processed_older_than(days=0)  # delete all processed markers
+            print(f"📦 Cleared {deleted} processed markers from cache")
+        except Exception as e:
+            print(f"⚠️ Failed to clear processed markers: {e}")
+
+    # If search-only requested, run discovery and exit before LLM stage
+    if args.search_only:
+        print("\n🔎 Running search-only mode (discovery)\n")
+        mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache)
+        # ultra_autonomous_discovery returns the mission dict; exit after reporting
+        if mission:
+            print("\n✅ Search-only discovery completed. Repos found:")
+            for i, s in enumerate(mission.get('sources', []), 1):
+                print(f"{i}. {s.get('name')} — {s.get('url')}")
+            sys.exit(0)
+        else:
+            sys.exit(1)
+
+    mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache)
     
     if mission:
         print("\n✅ SUCCESS! Next steps:")

@@ -131,6 +131,17 @@ class RepoCache:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_scores_goal ON discovery_scores(goal_hash)")
         
         self.conn.commit()
+
+        # Processed repositories (keep track of repos that have been used in a run)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS processed_repos (
+                repo_full_name TEXT PRIMARY KEY,
+                processed_at REAL NOT NULL,
+                info TEXT,  -- optional JSON with run_id or metadata
+                FOREIGN KEY (repo_full_name) REFERENCES repositories(repo_full_name)
+            )
+        """)
+        self.conn.commit()
     
     def cache_repo(self, repo: Dict, ttl_hours: int = 24):
         """Cache a repository's metadata."""
@@ -327,6 +338,40 @@ class RepoCache:
                 return None  # Expired
         
         return json.loads(row['embedding'])
+
+    # ---- Processed repos helpers ----
+    def mark_processed(self, repo_full_name: str, info: Optional[Dict] = None):
+        """Mark a repository as processed by a run."""
+        cursor = self.conn.cursor()
+        info_json = json.dumps(info) if info is not None else None
+        cursor.execute("""
+            INSERT OR REPLACE INTO processed_repos
+            (repo_full_name, processed_at, info)
+            VALUES (?, ?, ?)
+        """, (repo_full_name, time.time(), info_json))
+        self.conn.commit()
+
+    def is_processed(self, repo_full_name: str) -> bool:
+        """Return True if the repo was previously marked processed."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT processed_at FROM processed_repos WHERE repo_full_name = ?", (repo_full_name,))
+        row = cursor.fetchone()
+        return bool(row)
+
+    def get_processed(self, limit: int = 100) -> List[str]:
+        """Return list of processed repo_full_name values (most recent first)."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT repo_full_name FROM processed_repos ORDER BY processed_at DESC LIMIT ?", (limit,))
+        return [r[0] for r in cursor.fetchall()]
+
+    def purge_processed_older_than(self, days: int = 90) -> int:
+        """Purge processed markers older than `days`. Returns number deleted."""
+        cutoff = time.time() - days * 24 * 3600
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM processed_repos WHERE processed_at < ?", (cutoff,))
+        deleted = cursor.rowcount
+        self.conn.commit()
+        return deleted
     
     def query_repos(self, language: Optional[str] = None, 
                    min_stars: int = 0,

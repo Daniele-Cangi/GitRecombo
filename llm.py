@@ -18,7 +18,7 @@ def ensure_valid(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
     Draft202012Validator(schema).validate(data)
 
 def openai_recombine(goal: str, sources: List[Dict[str, Any]], prompt_path: str, schema: Dict[str, Any],
-                     model: str = "chatgpt-5") -> Dict[str, Any]:
+                     model: str = "chatgpt-4o-latest") -> Dict[str, Any]:  # 🔥 FIX: Actual model name in OpenAI
     from openai import OpenAI
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY not set")
