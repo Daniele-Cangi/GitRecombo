@@ -47,6 +47,7 @@ repo_cache.db
 *.json
 !schemas/*.json
 !package.json
+!PROJECT_SPEC.json
 *.html
 !templates/*.html
 !templates/*.html.j2
