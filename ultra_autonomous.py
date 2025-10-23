@@ -54,7 +54,6 @@ DEFAULT_DISCOVERY_CONFIG = {
     "w_relevance": 0.25,
     "w_diversity": 0.10,
     "use_embeddings": True,
-    "embed_provider": "sbert",
     "embedding_model": "Alibaba-NLP/gte-large-en-v1.5",
     "require_ci": False,
     "require_tests": False,
@@ -100,23 +99,10 @@ def load_discovery_config(config_file: str | None) -> dict:
     except (TypeError, ValueError):
         cfg["max_stars"] = None
 
-    embedding_choice = cfg.get("embedding_model_choice")
-    if embedding_choice:
-        if "gte-large" in embedding_choice:
-            cfg["embed_provider"] = "sbert"
-            cfg["embedding_model"] = "Alibaba-NLP/gte-large-en-v1.5"
-        elif "OpenAI" in embedding_choice:
-            cfg["embed_provider"] = "openai"
-            cfg["embedding_model"] = "text-embedding-3-small"
-        elif "bge-large" in embedding_choice:
-            cfg["embed_provider"] = "sbert"
-            cfg["embedding_model"] = "BAAI/bge-large-en-v1.5"
-
+    # Embedding model selection (only SBert/Hugging Face models supported)
     if not cfg["use_embeddings"]:
-        cfg["embed_provider"] = None
         cfg["embedding_model"] = None
     else:
-        cfg["embed_provider"] = cfg.get("embed_provider") or DEFAULT_DISCOVERY_CONFIG["embed_provider"]
         cfg["embedding_model"] = cfg.get("embedding_model") or DEFAULT_DISCOVERY_CONFIG["embedding_model"]
 
     cfg["goal"] = cfg.get("goal") or DEFAULT_DISCOVERY_CONFIG["goal"]
@@ -160,7 +146,6 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
     w_relevance = cfg["w_relevance"]
     w_diversity = cfg["w_diversity"]
     use_embeddings = cfg["use_embeddings"]
-    embed_provider = cfg["embed_provider"]
     embed_model = cfg["embedding_model"]
     max_stars = cfg["max_stars"]
     require_ci = cfg["require_ci"]
@@ -193,7 +178,7 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
         "require_ci": require_ci,
         "require_tests": require_tests,
         "authorsig": authorsig,
-        "embed_provider": embed_provider,
+        "embed_provider": "sbert" if use_embeddings else None,
         "embed_model": embed_model,
         "embed_max_chars": embed_max_chars,
         "goal": discovery_goal,

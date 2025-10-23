@@ -390,19 +390,13 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     vecs: Dict[str, List[float]] = {}
     goal_vec = None
     if embed_provider and texts:
-        if embed_provider == "openai":
-            from embeddings import OpenAIEmbedder as E
-        else:
-            from embeddings import SBertEmbedder as E
-        emb = E(embed_model)
+        from embeddings import SBertEmbedder
+        emb = SBertEmbedder(embed_model)
         enc = emb.embed(texts)
         vecs = {k:v for k,v in zip(keys, enc)}
     if goal and embed_provider:
-        if embed_provider == "openai":
-            from embeddings import OpenAIEmbedder as E
-        else:
-            from embeddings import SBertEmbedder as E
-        goal_vec = E(embed_model).embed([goal])[0]
+        from embeddings import SBertEmbedder
+        goal_vec = SBertEmbedder(embed_model).embed([goal])[0]
 
     def cosine(a, b):
         import math

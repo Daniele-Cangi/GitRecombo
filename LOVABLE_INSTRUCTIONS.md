@@ -15,7 +15,7 @@ Il backend Python **esiste già** in questa repo. **NON devi riscriverlo**, solo
 ### File Chiave (LEGGI QUESTI):
 - `ultra_autonomous.py` → Entry point principale
 - `discover.py` → Motore di discovery con GitHub API
-- `embeddings.py` → Embedding locali (Alibaba) o OpenAI
+- `embeddings.py` → Embedding locali (Alibaba/Hugging Face - GRATIS)
 - `llm.py` → Generazione blueprint con OpenAI GPT
 - `PROJECT_SPEC.json` → Specifica completa del progetto (LEGGI QUESTO!)
 
@@ -40,32 +40,96 @@ ultra_autonomous_20251023_143000.json
   "max_stars": 100,
   "use_embeddings": true,
   "embed_provider": "sbert",
+  "embedding_model": "Alibaba-NLP/gte-large-en-v1.5",
+  "min_health": 0.25,
+  "probe_limit": 40,
   "w_novelty": 0.35,
   "w_health": 0.25,
-  "w_relevance": 0.25
+  "w_relevance": 0.25,
+  "w_author": 0.05,
+  "w_diversity": 0.10
 }
 ```
 
-**Output di esempio**:
+**Output di esempio** (modalità completa):
 ```json
 {
-  "title": "GitRecombo — Out‑of‑Scale Blueprint",
-  "summary": "...",
+  "timestamp": "2025-10-23T14:30:05.123456",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a secure semantic search platform with vector embeddings...",
+  "goal_refinement": {
+    "goal": "Build a secure semantic search platform...",
+    "why_these_repos": "Extensive analysis of why these specific repos work together...",
+    "expected_impact": "Quantified outcomes and breakthrough innovations..."
+  },
   "sources": [
     {
       "name": "owner/repo",
       "url": "https://github.com/owner/repo",
-      "gem_score": 0.87,
-      "novelty_score": 0.82,
-      "health_score": 0.75,
-      "relevance": 0.92,
-      "concepts": ["vector", "embeddings", "search"]
+      "description": "Repo description",
+      "language": "Python",
+      "license": "MIT",
+      "readme_snippet": "First 2000 chars of README...",
+      "scores": {
+        "novelty": 0.82,
+        "health": 0.75,
+        "relevance": 0.92,
+        "author_rep": 0.45,
+        "gem_score": 0.87
+      },
+      "concepts": ["vector", "embeddings", "search", "index"]
     }
   ],
-  "architecture_ascii": "...",
-  "why_it_works": ["..."]
+  "discovery_params": {...},
+  "metrics": {
+    "topics": ["vector-database"],
+    "days": 90,
+    "candidates": 150,
+    "probed": 40,
+    "selected": 6
+  },
+  "blueprint": {
+    "architecture_ascii": "Visual diagram...",
+    "why_it_works": ["Reason 1", "Reason 2"]
+  }
 }
 ```
+
+**Output di esempio** (modalità `--search-only`, più veloce):
+```json
+{
+  "timestamp": "2025-10-23T14:25:10.654321",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": false,
+  "sources": [
+    {
+      "name": "kysely-org/kysely-typeorm",
+      "url": "https://github.com/kysely-org/kysely-typeorm",
+      "description": "",
+      "language": "TypeScript",
+      "license": "MIT",
+      "scores": {
+        "novelty": 0.3267,
+        "health": 1.0,
+        "relevance": 0.0,
+        "author_rep": 0.6831,
+        "gem_score": 0.4985
+      },
+      "concepts": ["type", "column", "varchar", "string"]
+    }
+  ],
+  "metrics": {
+    "candidates": 45,
+    "probed": 15,
+    "selected": 6
+  }
+}
+```
+
+**IMPORTANTE**: Il flag `--search-only` salta le fasi GPT-4 (goal refinement e blueprint generation), rendendo il processo molto più veloce e economico. Usa questa modalità per la GUI!
 
 ---
 
