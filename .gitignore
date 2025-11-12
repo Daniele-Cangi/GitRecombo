@@ -47,7 +47,8 @@ dry_run_payload.json
 COMPLETION_REPORT.txt
 
 # Mission outputs - contengono risultati ricerche personali
-missions/
+missions/*
+!missions/.gitkeep
 
 # Logs
 *.log
