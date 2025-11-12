@@ -263,55 +263,6 @@
     "Research: discover novel academic implementations on GitHub"
   ],
   
-  "gui_implementation_notes": {
-    "for_lovable": {
-      "goal": "Create web UI for GitRecombo that makes discovery accessible to non-technical users",
-      
-      "core_features": [
-        "1. Configuration Builder: Form to create discovery config JSON",
-        "2. Topic Input: Multi-input field for topics/interests",
-        "3. Goal Description: Textarea for user's project objective",
-        "4. Advanced Settings: Collapsible panel for weights, thresholds, longtail mode",
-        "5. Run Discovery: Button that calls ultra_autonomous.py with generated config",
-        "6. Results Display: Card-based UI showing discovered repos with scores",
-        "7. Blueprint View: Formatted display of architectural blueprint and integration steps",
-        "8. Export Options: Download results as JSON or copy to clipboard"
-      ],
-      
-      "architecture": {
-        "frontend": "React/Next.js with TypeScript",
-        "backend": "Python FastAPI or Flask (wrap ultra_autonomous.py)",
-        "api_endpoints": [
-          "POST /api/discover - Run discovery with config",
-          "GET /api/missions - List previous discoveries",
-          "GET /api/mission/:id - Get specific discovery result",
-          "GET /api/health - Check GitHub/OpenAI API status"
-        ]
-      },
-      
-      "ui_components": {
-        "TopicInput": "Tag-style input for multiple topics",
-        "ScoreVisualizer": "Progress bars or radar chart for scores",
-        "RepoCard": "Card showing repo info + scores + concepts",
-        "ConfigPanel": "Form with validation for all discovery parameters",
-        "BlueprintViewer": "Code-highlighted display of commands and architecture"
-      },
-      
-      "state_management": {
-        "config": "Current discovery configuration",
-        "results": "Latest discovery results",
-        "loading": "Discovery in progress state",
-        "api_keys": "GitHub/OpenAI credentials (never log/display in UI)"
-      },
-      
-      "key_workflows": [
-        "Quick Start: Pre-filled example config → Run → See results in <2 minutes",
-        "Custom Discovery: Build config → Adjust weights → Run → Iterate on results",
-        "Explore Results: View repos → Click to GitHub → Export blueprint → Integrate"
-      ]
-    }
-  },
-  
   "common_issues": {
     "rate_limit_errors": {
       "symptom": "403 Forbidden or 'rate limit exceeded'",
