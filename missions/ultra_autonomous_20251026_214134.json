@@ -1,0 +1,301 @@
+{
+  "timestamp": "2025-10-26T21:41:34.629265",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build an ultra-autonomous, budget-aware repo discovery engine that ranks and recombines long-tail GitHub projects using lightweight, model-free embeddings derived from structural signals (href/src/img anchors, license tokens, dependency fingerprints) instead of heavy neural encoders. The system couples a Spring Boot 3 orchestration core (virtual-threaded exploration/exploitation scheduler) with Retrofit-driven declarative adapters for GitHub and raw code hosts, and a theme-switchable Tabler/AdminLTE observability cockpit for live A/B exploration. Success looks like: 10k repos processed under 60 seconds on a single core; top-k (k=50) precision within 10% of a Sentence-BERT baseline; novelty/health-weighted recall uplift ≥25%; and <2ms per-embedding. Why this matters: it proves you can unlock high-signal discovery and combinatorial innovation under tight compute/network budgets—turning simple tokens and HTTP-grade plumbing into a discovery autopilot anyone can host.",
+  "repository_synergy": "THE INSIGHT: All four repos encode an overlooked common denominator: disciplined structure. Tabler/AdminLTE distill messy UI into clean atoms (consistent href/src/img signatures, utility classes, grid semantics). Spring Boot distills backend complexity into uniform entry points and lifecycle hooks. Retrofit turns chaotic APIs into typed, declarative contracts. If we treat discovery as a problem of reading and recombining structure with ruthless efficiency, these projects are unusually aligned. They let us build a discovery engine whose “intelligence” emerges from structure-first signals instead of expensive semantics. \n\nTHE STORY: Why these repos instead of the obvious (Next.js + Elastic + SBERT)? Because we’re testing a provocative hypothesis: you don’t need heavy embeddings to get competitive discovery if you make structure do the heavy lifting. Spring Boot 3 brings virtual threads, Actuator, and a production-caliber scheduler—perfect for high-fanout exploration under strict rate limits. Retrofit—typically a client-side tool—becomes our illicit bridge: a declarative ingress layer to treat GitHub REST/GraphQL, raw files, and even local clones as one HTTP-like substrate. Tabler and AdminLTE, rather than being mere skins, are structural probes. Their HTML idioms (link density, path regularity, asset hostnames) inspire the very features our lightweight embeddings compute across any repo’s README/site. \n\nTHE SYNERGY: \n- Retrofit + Spring Boot: We repurpose Retrofit inside the server as a contract-first data plane. With OkHttp interceptors, we route gh://, file://, http(s):// uniformly, enabling one pipeline to fetch GitHub metadata, raw README, tarball snippets, and cached local analysis. Virtual threads make thousands of synchronous Retrofit calls cheap and easy to reason about. \n- Tabler + AdminLTE: We don’t “pick a theme”; we hot-swap both at runtime by normalizing CSS variables and component slots. Beyond UX, we measure how operators navigate discovery queues, using DOM-level telemetry (e.g., hover-to-click ratios over repository facets) as a feedback signal back into the scheduler. The UI becomes a living lab for exploration strategies. \n- Structure-driven Embedding: Inspired by the UI kits’ atomic design, we craft token economies: anchor hostnames (href https), asset density (img src), code badges, license strings, build-tool hints (gradle/maven/npm), and link graph motifs. These collapse into SimHash/MinHash signatures and Bloom-filter sketches—embeddings so light they fit inside cache headers. \n\nTHE INNOVATION: Combining these pieces creates a discovery engine that is: \n- Autonomously exploratory (active learning loop guided by novelty/health trade-offs), \n- Ridiculously efficient (2ms per embedding, HTTP2 multiplexed ingestion, ETag-aware caching), \n- Interpretable (every dimension maps to a real structural feature), \n- Skin-aware (operator UI becomes an experimental surface). \n\nTHE BRIDGE: The truly illicit move is using Retrofit as a universal content router with custom CallAdapters that translate scheme-aware requests into GitHub GraphQL queries, raw content fetches, or local FS reads, all appearing as the same interface to the analyzer. Simultaneously, we repurpose admin templates as signal generators and telemeters, not just aesthetics. Two UI kits compete at runtime as co-pilots of human-in-the-loop discovery, feeding measurable feedback that tunes the kind of structural signals our embeddings privilege. The result is a discovery autopilot that runs on basic HTTP plumbing and hash tricks—and still surfaces non-obvious, high-quality recombinations.",
+  "technical_architecture": "Components and Data Flow:\n- Discovery Orchestrator (Spring Boot 3): \n  - Scheduler: Multi-armed bandit over candidate sources (search terms, topics, maintainers). Uses virtual threads to spawn high-fanout probes without callback complexity. \n  - Policy Engine: Balances novelty (Jaccard distance between MinHashes), health (commit cadence, PR velocity), license permissiveness, and semantic hints (keyword filters). \n  - Feedback Loop: Consumes operator telemetry and acceptance/rejection traces, reweights the bandit arms and token weights in embeddings. \n\n- Ingest Adapters (Retrofit inside Spring): \n  - GitHubGraphQLService: @POST(\"/graphql\") with typed fragments for stars, forks, releases, defaultBranchRef.target.history(first: n). \n  - GitHubRawService: @GET(\"/repos/{owner}/{repo}/readme\"), @GET tarball, @GET license. \n  - GitLikeService: custom scheme gh://owner/repo/path@ref and file://… handled via OkHttp Interceptor; maps to local cache or GraphQL blob fetch. \n  - Caching: OkHttp cache with ETag/If-None-Match; 10–60s soft TTL, 1h hard TTL; content-addressed by SHA-256 to dedupe repeated analysis. \n\n- Lightweight Embedding Engine (Java): \n  - Tokenizers: \n    - Link/Asset tokenizer: extract hostnames, path depth, file extensions, badge providers (shields.io, travis-ci, gh-actions). \n    - Build fingerprint: gradle/maven/npm/pnpm/yarn markers; language hints via file suffix distributions (from tarball headers). \n    - License/health tokenizer: SPDX id, issue/PR ratios, release cadence bucketing. \n  - Sketchers: \n    - SimHash(128): over token-weighted shingles; \n    - MinHash(64×2): for Jaccard distance; \n    - Bloom filter(2048 bits): quick containment tests for fast duplicate rejection. \n  - Cost: streaming O(n) one-pass, zero allocations via flyweight structs; uses primitive arrays and Murmur3. \n\n- Store and Query: \n  - Embedded Postgres or H2 for metadata; RocksDB or Redisson for signature caches. \n  - LSH tables (N=8 bands) for near-duplicate detection. \n  - Materialized views: top-k by blended score; novelty buckets; per-topic diversity. \n\n- Operability Dashboard (Tabler/AdminLTE dual skin): \n  - SSE/WebSocket stream for real-time probe status, score deltas, drift alarms. \n  - Toggleable skin switch: Tabler as default; AdminLTE A/B flight. \n  - Panels: Candidate Queue, Similarity Radar (MinHash band visualization), Health Heatmap (release/issue cadence), License Gate, Budget Meter (req/s, remaining rate limit). \n\nKey Challenges and Solutions: \n- Uniform access across schemes: Implement OkHttp Interceptor that captures Request.url().scheme(). For gh://, translate to GraphQL blob queries; for file://, map to local FS; for http(s)://, pass through. Retrofit interfaces remain identical, maximizing reuse. \n- Rate limiting and backpressure: GitHub rate status polled via Retrofit; Guava RateLimiter per token; dynamic throttling via scheduler that senses 429/secondary limits and shifts to cached/local analysis. \n- Precision without heavy models: Cold-start with curated token weights (e.g., license permissive +0.3, recent release +0.2, topic overlap +0.1) then auto-tune via Bayesian optimization over validation clicks/accepts. \n- Performance: \n  - Java 21 virtual threads: each probe is a blocking Retrofit call but cheap; target 5k concurrent probes on small instances. \n  - HTTP/2 multiplexing via OkHttp; pool warmup with pre-primed TLS sessions. \n  - Tarball partial analysis: only read headers and top N files (by size/type) to derive language mix and build markers—90% of value at 10% cost. \n\nAPIs and Interfaces: \n- POST /discover {topics, seeds, budget}: start a campaign; returns campaignId. \n- GET /campaign/{id}/stream: SSE of events (candidate_scored, probe_rate, limit_state). \n- GET /candidates?campaignId=&k=: returns ranked list with scores, reasons (interpretable token contributions). \n- POST /feedback {candidateId, verdict}: updates bandit priors and token weights. \n- GET /similar/{repo}?k=: LSH-backed near neighbors. \n\nIntegration Patterns: \n- UI consumes SSE for “live crawl” feel; skin switch triggers DOM-level metrics collection injected via a small JS plugin emitting UI telemetry back to /feedback/ui. \n- Retrofit converters parse README (CommonMark) and extract anchors with a zero-copy lexer; no full Markdown render required. \n- Tabler/AdminLTE harmonized with a small design token layer: map colors/spacing/typography to CSS variables; a single component tree flips between kits at runtime. \n\nSecurity and Robustness: \n- Token storage encrypted-at-rest; GitHub tokens scoped minimally. \n- Strict origin allowlist for raw file fetches; content-length caps; gzip bombs detection. \n- Structured logging with OpenTelemetry; span per candidate; rate-limit traces plotted on dashboard.",
+  "expected_impact": "Use Cases:\n1) Long-tail OSS scouting for platform teams: Seed with 3–5 niche topics (e.g., WASM image codecs, lightweight LLM serving). The system explores 10k repos in under a minute, ranks by permissive license and release cadence, and surfaces safe-to-integrate gems that don’t trend on stars yet. Operators accept a few; scheduler pivots toward similar unexplored pockets. \n2) Rapid blueprint recombination: Given a target output (e.g., “server-side runtime + declarative client + admin cockpit”), the system proposes unconventional mixes: a small Elixir runtime paired with Retrofit-like HTTP definitions, skinned with AdminLTE. The embedding’s structural features bias toward compatible build tools and license matches. \n3) Procurement/Compliance triage: License gate flags high-risk items early; health heatmap exposes maintainer response time. Lightweight signals avoid cloning gigabytes of code, yet precision stays competitive. \n4) Incident-driven forking: When upstream breaks, query /similar/{repo} to find near-duplicates by structure (e.g., same dependency tree, same badge ecosystems). Enables tactical fork-or-migrate decisions in minutes. \n5) Internal repo deduplication: Point at an enterprise GitHub; Bloom+LSH reveals duplicated microservices differing only in infra scaffolding; reduces maintenance overhead. \n6) A/B operator UX research: Flip between Tabler/AdminLTE; UI telemetry feeds exploration reward. If Tabler yields faster valid accepts for data tools, token weights adapt to emphasize the signals operators used. \n7) Budget-constrained CI for discovery: Run as a nightly job on a small VM; the system respects API budgets, uses cache+ETag, and still achieves high novelty without GPU or vector infra. \n\nScalability/Extensibility: virtual threads and Retrofit contracts make adding data sources trivial (GitLab, Codeberg via new scheme adapters). Embedding features are pluggable—add a token extractor for Cargo.toml or Go modules with minimal code. \n\nLimitations and Mitigations: \n- Semantic blind spots: purely structural signals can miss nuanced intent. Mitigation: hook an optional small LM reranker for the top-200 candidates when budget allows. \n- Topic cold-start: bad seed topics produce poor candidates. Mitigation: provide built-in topic maps and starter profiles; learn from operator approvals. \n- API quotas: sustained exploration may hit limits. Mitigation: aggressive ETag use, offline tarball header sampling, and staggered scheduling.\n",
+  "innovation_analysis": "Innovation score: 8.6/10. The repurposing of Retrofit as a server-side universal content router, combined with structural, UI-inspired lightweight embeddings and a dual-skin feedback cockpit, is a non-obvious, efficient path to autonomous discovery without heavy ML.\n\nNext steps (2 weeks): \n- Day 1–3: Implement scheme-aware Retrofit client with OkHttp interceptors; wire GitHub GraphQL; enable ETag cache. \n- Day 4–6: Build tokenizers and SimHash/MinHash/Bloom sketches; expose /embed and /similar endpoints; basic scoring. \n- Day 7–9: Orchestrator with virtual-thread scheduler and bandit policy; connect feedback endpoint. \n- Day 10–14: Tabler/AdminLTE dual-skin UI, SSE stream, telemetry plugin; baseline vs SBERT (optional) on curated topics. \n\nKey metrics: time-to-10k (s), ms/embedding, top-50 precision vs baseline, novelty uplift, duplicate rate, operator accept rate, API errors/1k requests. \n\nTools: Java 21, Spring Boot 3.x, Retrofit + OkHttp, GraphQL client, RocksDB or Redis, Tabler + AdminLTE assets, OpenTelemetry, JMH for microbenchmarks.",
+  "sources": [
+    {
+      "name": "tabler/tabler",
+      "url": "https://github.com/tabler/tabler",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n<a href=\"https://github.com/tabler/tabler\"><img src=\"https://raw.githubusercontent.com/tabler/tabler/refs/heads/dev/shared/static/logo.svg\" alt=\"A premium and open source dashboard template with a responsive and high-quality UI.\" width=\"300\"></a><br><br>\nA premium and open source dashboard template with a responsive and high-quality UI.\n</p>\n\n<p align=\"center\">\n<a href=\"https://www.npmjs.com/package/@tabler/core\" target=\"__blank\"><img src=\"https://img.shields.io/npm/v/@tabler/core?color=1864ab&label=Latest+version\" alt=\"NPM version\"></a>\n<a href=\"https://www.npmjs.com/package/@tabler/core\" target=\"__blank\"><img alt=\"NPM Downloads\" src=\"https://img.shields.io/npm/dm/@tabler/core?color=1971c2&label=Downloads\"></a>\n<a href=\"https://preview.tabler.io\" target=\"__blank\"><img src=\"https://img.shields.io/static/v1?label=Demo&message=preview&color=228be6\" alt=\"Tabler preview\"></a>\n<a href=\"https://github.com/tabler/tabler/blob/master/LICENSE\"><img src=\"https://img.shields.io/npm/l/tabler.svg?label=License&message=MIT&color=1c7ed6\" alt=\"License\"></a>\n<a href=\"https://github.com/tabler/tabler/archive/dev.zip\" target=\"__blank\"><img src=\"https://img.shields.io/static/v1?label=Download&message=ZIP&color=339af0\" alt=\"Tabler preview\"></a>\n<a href=\"https://github.com/tabler/tabler/actions/workflows/test.yml\" target=\"__blank\"><img alt=\"Test build\" src=\"https://github.com/tabler/tabler/actions/workflows/test.yml/badge.svg\"></a>\n<a href=\"https://github.com/tabler/tabler\" target=\"__blank\"><img alt=\"GitHub stars\" src=\"https://img.shields.io/github/stars/tabler/tabler?style=social\"></a>\n</p>\n\n## Sponsors\n\n**If you want to support our project and help us grow it, you can [become a sponsor on GitHub](https://github.com/sponsors/codecalm) or just [donate on PayPal](https://paypal.me/codecalm) :)**\n\n<p align=\"center\">\n\t<a href=\"https://github.com/sponsors/codecalm\">\n\t\t<img src=\"https://cdn.jsdelivr.net/gh/tabler/sponsors@latest/sponsors.svg\" alt=\"Tabler sponsors\">\n\t</a>\n</p",
+      "scores": {
+        "novelty": 0.3046,
+        "health": 1.0,
+        "relevance": 0.7621,
+        "author_rep": 0.0,
+        "gem_score": 0.6971
+      },
+      "concepts": [
+        "https",
+        "tabler",
+        "href https",
+        "src https",
+        "img src",
+        "href",
+        "src",
+        "img"
+      ]
+    },
+    {
+      "name": "spring-projects/spring-boot",
+      "url": "https://github.com/spring-projects/spring-boot",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "= Spring Boot image:https://github.com/spring-projects/spring-boot/actions/workflows/build-and-deploy-snapshot.yml/badge.svg?branch=main[\"Build Status\", link=\"https://github.com/spring-projects/spring-boot/actions/workflows/build-and-deploy-snapshot.yml?query=branch%3Amain\"] image:https://img.shields.io/badge/Revved%20up%20by-Develocity-06A0CE?logo=Gradle&labelColor=02303A[\"Revved up by Develocity\", link=\"https://ge.spring.io/scans?&search.rootProjectNames=Spring%20Boot%20Build&search.rootProjectNames=spring-boot-build\"]\n\n:docs: https://docs.spring.io/spring-boot\n:github: https://github.com/spring-projects/spring-boot\n\nSpring Boot helps you to create Spring-powered, production-grade applications and services with absolute minimum fuss.\nIt takes an opinionated view of the Spring platform so that new and existing users can quickly get to the bits they need.\n\nYou can use Spring Boot to create stand-alone Java applications that can be started using `java -jar` or more traditional WAR deployments.\nWe also provide a command-line tool that runs Spring scripts.\n\nOur primary goals are:\n\n* Provide a radically faster and widely accessible getting started experience for all Spring development.\n* Be opinionated, but get out of the way quickly as requirements start to diverge from the defaults.\n* Provide a range of non-functional features common to large classes of projects (for example, embedded servers, security, metrics, health checks, externalized configuration).\n* Absolutely no code generation and no requirement for XML configuration.\n\n\n\n== Installation and Getting Started\n\nThe {docs}[reference documentation] includes detailed {docs}/installing.html[installation instructions] as well as a comprehensive {docs}/tutorial/first-application/index.html[``getting started``] guide.\n\nHere is a quick teaser of a complete Spring Boot application in Java:\n\n[source,java]\n----\nimport org.springframework.boot.*;\nimport org.springframework.boot.autoconfigure.*;\nimport org.springframework.we",
+      "scores": {
+        "novelty": 0.3509,
+        "health": 0.75,
+        "relevance": 0.7456,
+        "author_rep": 0.0,
+        "gem_score": 0.5306
+      },
+      "concepts": [
+        "spring",
+        "spring boot",
+        "boot",
+        "https",
+        "if",
+        "can",
+        ".",
+        "build"
+      ]
+    },
+    {
+      "name": "square/retrofit",
+      "url": "https://github.com/square/retrofit",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "Retrofit\n========\n\nA type-safe HTTP client for Android and Java.\n\nFor more information please see [the website][1].\n\n\nDownload\n--------\n\nDownload [the latest JAR][2] or grab from Maven central at the coordinates `com.squareup.retrofit2:retrofit:3.0.0`.\n\nSnapshots of the development version are available in [Sonatype's `snapshots` repository][snap].\n\nRetrofit requires at minimum Java 8+ or Android API 21+.\n\n\nR8 / ProGuard\n-------------\n\nIf you are using R8 the shrinking and obfuscation rules are included automatically.\n\nProGuard users must manually add the options from\n[retrofit2.pro][proguard file].\nYou might also need [rules for OkHttp][okhttp proguard] which is a dependency of this library.\n\n\nLicense\n=======\n\n    Copyright 2013 Square, Inc.\n\n    Licensed under the Apache License, Version 2.0 (the \"License\");\n    you may not use this file except in compliance with the License.\n    You may obtain a copy of the License at\n\n       http://www.apache.org/licenses/LICENSE-2.0\n\n    Unless required by applicable law or agreed to in writing, software\n    distributed under the License is distributed on an \"AS IS\" BASIS,\n    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n    See the License for the specific language governing permissions and\n    limitations under the License.\n\n\n [1]: https://square.github.io/retrofit/\n [2]: https://search.maven.org/remote_content?g=com.squareup.retrofit2&a=retrofit&v=LATEST\n [snap]: https://s01.oss.sonatype.org/content/repositories/snapshots/\n [proguard file]: https://github.com/square/retrofit/blob/master/retrofit/src/main/resources/META-INF/proguard/retrofit2.pro\n [okhttp proguard]: https://square.github.io/okhttp/r8_proguard/\n [okio proguard]: https://square.github.io/okio/#r8-proguard\n",
+      "scores": {
+        "novelty": 0.2702,
+        "health": 0.75,
+        "relevance": 0.7698,
+        "author_rep": 0.0,
+        "gem_score": 0.5052
+      },
+      "concepts": [
+        "proguard",
+        "license",
+        "https",
+        "retrofit",
+        ".",
+        "com.squareup.retrofit2 retrofit",
+        "proguard file",
+        "okhttp proguard"
+      ]
+    },
+    {
+      "name": "ColorlibHQ/AdminLTE",
+      "url": "https://github.com/ColorlibHQ/AdminLTE",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# [AdminLTE - Bootstrap 5 Admin Dashboard](https://adminlte.io)\n\n[![npm version](https://img.shields.io/npm/v/admin-lte/latest.svg)](https://www.npmjs.com/package/admin-lte)\n[![Packagist](https://img.shields.io/packagist/v/almasaeed2010/adminlte.svg)](https://packagist.org/packages/almasaeed2010/adminlte)\n[![cdn version](https://data.jsdelivr.com/v1/package/npm/admin-lte/badge)](https://www.jsdelivr.com/package/npm/admin-lte)\n[![Discord Invite](https://img.shields.io/badge/discord-join%20now-green)](https://discord.gg/jfdvjwFqfz)\n[![Netlify Status](https://api.netlify.com/api/v1/badges/1277b36b-08f3-43fa-826a-4b4d24614b3c/deploy-status)](https://app.netlify.com/sites/adminlte-v4/deploys)\n\n**AdminLTE** is a fully responsive administration template. Based on **[Bootstrap 5](https://getbootstrap.com/)** framework and also the JavaScript plugins.\nHighly customizable and easy to use. Fits many screen resolutions from small mobile devices to large desktops.\n\n## What's New in v4.0.0-rc5\n\n**Latest Release with Major Dependency Updates & Security Fixes** - Fresh improvements for better development experience:\n\n- **Major Dependency Updates** - 17+ npm packages updated to latest versions\n- **Security Enhancements** - Fixed 2 critical vulnerabilities (axios DoS, form-data random function)\n- **Latest Tooling** - Updated to TypeScript 5.9.3, ESLint 9.37.0, Astro 5.14.4, and more\n- **Bootstrap 5.3.8** - Updated to the latest stable Bootstrap release\n- **ESLint 9.x Compatibility** - Removed deprecated `.eslintignore` file\n- **Zero Vulnerabilities** - All security issues resolved\n\n**Key Improvements:**\n- ✅ All dependencies updated to their absolute latest versions\n- ✅ Two major version bumps: cross-env 10.x and eslint-config-xo-typescript 9.x\n- ✅ Enhanced security with vulnerability fixes\n- ✅ Cleaner linting without deprecation warnings\n- ✅ Production-ready with enhanced stability\n- ✅ Faster builds with latest Rollup, Sass, and Terser\n\n**Install the latest:**\n```bash\nnpm install adm",
+      "scores": {
+        "novelty": 0.2229,
+        "health": 0.75,
+        "relevance": 0.7613,
+        "author_rep": 0.0,
+        "gem_score": 0.4827
+      },
+      "concepts": [
+        "-",
+        "https",
+        "nbsp",
+        "href https",
+        "npm",
+        "img src",
+        "src https",
+        "/ /a"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "web3",
+      "stable",
+      "SQL",
+      "parameters"
+    ],
+    "custom_queries": [
+      "pushed:>2025-10-20 language:html stars:>10",
+      "pushed:>2025-10-20 language:java stars:>5",
+      "pushed:>2025-10-20 language:CSS stars:>5"
+    ],
+    "days": 7,
+    "licenses": [
+      "MIT",
+      "Apache-2.0"
+    ],
+    "max": 3,
+    "explore_longtail": false,
+    "max_stars": 100,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Test ultra_autonomous discovery with lightweight embedding",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 5,
+    "exclude_processed": false,
+    "use_cache": true
+  },
+  "metrics": {
+    "topics": [
+      "web3",
+      "stable",
+      "SQL",
+      "parameters"
+    ],
+    "days": 7,
+    "explore_longtail": false,
+    "probe_limit": 5,
+    "candidates": 4,
+    "probed": 4,
+    "selected": 4,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "tabler/tabler",
+        "url": "https://github.com/tabler/tabler",
+        "license": "MIT",
+        "role": "module (HTML)",
+        "novelty_score": 0.3046,
+        "relevance": 0.7621,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "tabler",
+          "href https",
+          "src https",
+          "img src",
+          "href",
+          "src",
+          "img"
+        ],
+        "gem_score": 0.6971
+      },
+      {
+        "name": "spring-projects/spring-boot",
+        "url": "https://github.com/spring-projects/spring-boot",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.3509,
+        "relevance": 0.7456,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "spring",
+          "spring boot",
+          "boot",
+          "https",
+          "if",
+          "can",
+          ".",
+          "build"
+        ],
+        "gem_score": 0.5306
+      },
+      {
+        "name": "square/retrofit",
+        "url": "https://github.com/square/retrofit",
+        "license": "Apache-2.0",
+        "role": "module (HTML)",
+        "novelty_score": 0.2702,
+        "relevance": 0.7698,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "proguard",
+          "license",
+          "https",
+          "retrofit",
+          ".",
+          "com.squareup.retrofit2 retrofit",
+          "proguard file",
+          "okhttp proguard"
+        ],
+        "gem_score": 0.5052
+      },
+      {
+        "name": "ColorlibHQ/AdminLTE",
+        "url": "https://github.com/ColorlibHQ/AdminLTE",
+        "license": "MIT",
+        "role": "module (CSS)",
+        "novelty_score": 0.2229,
+        "relevance": 0.7613,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "nbsp",
+          "href https",
+          "npm",
+          "img src",
+          "src https",
+          "/ /a"
+        ],
+        "gem_score": 0.4827
+      }
+    ],
+    "architecture_ascii": "[1] tabler/tabler  →  [2] spring-projects/spring-boot  →  [3] square/retrofit  →  [4] ColorlibHQ/AdminLTE\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "web3",
+        "stable",
+        "SQL",
+        "parameters"
+      ],
+      "days": 7,
+      "explore_longtail": false,
+      "probe_limit": 5,
+      "candidates": 4,
+      "probed": 4,
+      "selected": 4,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

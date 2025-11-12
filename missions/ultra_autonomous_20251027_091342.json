@@ -1,0 +1,343 @@
+{
+  "timestamp": "2025-10-27T09:13:42.898367",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build GitRecombo, a local-first AI-to-Tool Foundry that turns open-source Go libraries into on-demand, hot-swappable LLM tools packaged and versioned like models. Concretely: use llama.cpp (GGUF) as the inference kernel with JSON grammar-constrained tool-calls; embed tool schemas and routing metadata inside GGUF headers; drive codegen of Go microservices from Awesome-Go entries; package binaries and LoRA-biases as Ollama Modelfile layers; orchestrate flows in LangChain; and expose a visual, debuggable pipeline in LangFlow. Success = (1) From an Awesome-Go entry URL to a working tool callable by the LLM in <90 seconds; (2) 95%+ valid function-call JSON without retries using llama.cpp GBnF grammars; (3) <40 ms tool-router overhead at p95; (4) 5+ tools composed per flow with <15% token overhead compared to baseline agents; (5) Offline, cross-platform execution with CPU/GPU quantized models. This matters because it collapses model, skill, and integration into a single artifact and workflow—turning the LLM stack into a self-contained, portable, auditably-opsable system that any team can adapt and extend on-prem.",
+  "repository_synergy": "THE INSIGHT: Model files can carry more than weights—they can carry behavior. GGUF already stores rich metadata. What if we smuggled a toolchain into that metadata: JSON schemas for functions, OpenAPI snippets, routing hints, even LoRA adapters that bias the model to call the right tools? Then the model isn’t just a predictor; it’s a portable skillpack. Combine that with the Go ecosystem’s uniquely composable, static binaries and you get the first truly model-native tool registry that compiles itself from curated source.\n\nTHE STORY: Why these repos? llama.cpp gives us a disciplined, low-latency, offline kernel with grammar-constrained sampling and adapter composition—perfect for structured tool-calls without brittle regexes. Ollama is the distribution plane: a dead-simple way to pull/run models across platforms with a Modelfile that can sneak in non-weights assets—we co-opt it to ship skillpacks. LangChain is the compiler and runtime guardrail—codegen, RAG, tool routing, retries—bridging Python’s glue ecosystem and our Go microservices. LangFlow is our live circuit debugger: draw the flow, test prompts, watch tokens and calls; then harden the resulting graph into a reproducible artifact. Awesome-Go is the unlikely motherlode—the world’s best, curated list of robust, production-grade Go libraries; we mine it not for docs, but for capability surfaces we can auto-wrap and compile.\n\nTHE SYNERGY: LLMs are great at describing tools but terrible at providing them. Go is great at providing tools but has no semantic interface by default. The illicit bridge is a pipeline that (1) scrapes Awesome-Go metadata and READMEs; (2) infers a stable typed interface using LangChain-assisted code synthesis; (3) generates Go microservice wrappers with a locked JSON Schema; (4) compiles them to static binaries; (5) packages schemas, LoRA biases, prompts, and binaries into an Ollama skillpack; (6) embeds the tool registry and routing hints inside the GGUF metadata; and (7) loads it through llama.cpp with GBnF so the model can deterministically emit the right JSON for those tools. The model now literally carries its API surface.\n\nTHE INNOVATION: Instead of building a separate plugin marketplace, we turn models into their own plugin manifest. Instead of managing brittle agent tool routing as prompt soup, we use GGUF as a typed registry with schemas. Instead of remote SaaS functions, we compile Go microservices from a curated open-source index—and ship them with the model. Your laptop becomes a sealed, reproducible capability box you can move between air-gapped servers. And because Ollama already speaks “pull/run”, ops is trivial.\n\nTHE BRIDGE: We repurpose three things in unorthodox ways: (1) GGUF metadata becomes a tool schema and routing bus; (2) Ollama’s Modelfile is turned into a skillpack composer bundling binaries + LoRA adapters + prompt templates; (3) LangFlow’s graph becomes a “skill scene” that we compile into GGUF metadata patches, letting non-coders author model-native toolkits. The aha: the artifact you ship is the model, and it brings its own tools.",
+  "technical_architecture": "Core components and data flow:\n\n1) Skill Discovery and Codegen\n- Source: Awesome-Go index (markdown) + repo READMEs.\n- LangChain pipeline:\n  - Ingestor parses Awesome-Go sections, extracts candidate libs (name, repo URL, categories, badges).\n  - Summarizer uses a local llama.cpp-backed LLM to generate: capability synopsis, potential I/O types, example calls.\n  - Interface Synthesizer creates a stable JSON Schema for tool functions (operation names, arg types, constraints) and an OpenAPI fragment.\n  - Codegen Templates (Go) emit a microservice wrapper with:\n    - ToolRPC gRPC/HTTP handlers matching the JSON Schema.\n    - Deterministic input validation and safe defaults.\n    - Structured logging and a sidecar policy checker.\n  - Security gate: sandbox policy (seccomp/apparmor on Linux, Windows Job Objects, macOS sandbox) + minimal filesystem/network.\n  - go build -ldflags \"-s -w\" to produce static binaries; cross-compile via Go toolchain (CGO disabled unless required).\n\n2) Skillpack Composition (Model-anchored)\n- Artifact format: Ollama Modelfile layering a base GGUF model + assets.\n- Assets:\n  - gguf-skill-metadata.json: schemas per tool, routing hints, endpoint addresses, cost hints.\n  - LoRA adapters per tool (tiny biases that steer tool-call format and token choices).\n  - Prompt grammar (GBnF) for llama.cpp to enforce JSON tool-call shape.\n  - Go binaries shipped under ./skills/<tool>/bin.\n  - Health probes, example prompts, and unit tests.\n- We inject skill metadata into GGUF custom KV using a gguf-patch step (no weights modified). The metadata maps tool_id -> JSON Schema, endpoint, auth policy.\n- The Modelfile RUN directive hooks a small sidecar (Go) that boots required binaries and registers them on a local mesh (e.g., NATS or gRPC registry).\n\n3) Runtime Orchestration\n- Inference: llama.cpp via Ollama runtime (CPU/GPU). We select a quant (e.g., Q4_K_M) with GBnF grammar to force one of:\n  - {\"tool\": \"<id>\", \"args\": {...}}\n  - {\"final\": \"<text>\"}\n- Tool Router (Go) reads the GGUF metadata at model load and builds a dispatch table. It offers:\n  - /tool-call HTTP endpoint (JSON Schema validated) and gRPC ToolRPC.\n  - Deadline-aware calls with circuit-breakers and idempotency keys.\n- LangChain Agent (Python) sits above as an optimizer not a router: it plans multi-step flows, enriches context (RAG), and performs retries or reflection if the tool output conflicts with schema expectations.\n- LangFlow Graph is the ops UI. Nodes map to: LLM with specific grammar, ToolRouter call, RAG retriever, Evaluator, Cache. The graph is exported as a GGUF metadata patch to keep the deployment single-artifact.\n\n4) Protocols, interfaces, and performance choices\n- Tool-call encoding: JSON Schema enforced via llama.cpp GBnF; ensures >95% well-formed outputs, eliminating many post-processing hacks.\n- Transport: gRPC for intra-host low-latency (protobuf) and HTTP/1.1 fallback. We optionally use NATS JetStream as bus for fan-out/fan-in and speculative execution.\n- Speculative Tool Prefetch: When the LLM’s early logits cross a threshold for a tool token, we tentatively warm the tool container and fetch cached responses for common args. If the final call diverges, we cancel; otherwise p95 latency drops.\n- Adapter Composition: Multiple LoRAs can be applied in llama.cpp to bias toward subset tools per flow. Flows in LangFlow compile to adapter sets.\n- Token efficiency: We template tool descriptions minimally. Instead of dumping full OpenAPI, we include 1-line affordance + example; the schema lives in GGUF for router but not in prompt.\n- Caching: Responses cached keyed by tool_id + arg hash. For idempotent ops, cache TTLs controlled by metadata.\n\n5) Key challenges and solutions\n- Security of on-demand binaries: We sandbox with minimal capabilities, drop privileges, run as dedicated user, network egress denied by default; allowlist domains per tool via metadata.\n- Determinism and JSON correctness: Grammar-based decoding and constrained beam for tool mode, with temperature=0.2, top_p=0.9; fallback parser with repair heuristics is rarely needed.\n- Cross-platform builds: Prebuild binaries for common OS/arch; if missing, compile lazily with a user prompt; store in a local cache.\n- Drift between docs and reality: Unit test harness auto-runs sanity examples on install; failing tools get quarantined.\n- Model-tool co-versioning: Skillpack version ties GGUF commit hash + binary checksums. Ollama ensures atomic pulls and rollbacks.",
+  "expected_impact": "Use cases uniquely enabled by the combo:\n\n1) Air-gapped incident automation\n- A SOC loads a “NetOps” skillpack that bundles DNS, TLS, traceroute tools compiled from Awesome-Go. The LLM plans diagnostics, calls tools, summarizes anomalies—no cloud, no Docker Hub, no pip storms. From laptop to war room in minutes.\n\n2) Edge robotics with offline skills\n- A field robot carries a 7B quantized model plus a vision+control skillpack. Computation and control (PID tuners, path planners from Go libs) run as local binaries with real-time gRPC. The LLM orchestrates multi-step recoveries when sensors degrade.\n\n3) Internal data wrangling without platform sprawl\n- Analysts draw a LangFlow pipeline: fetch from Postgres (pgx), clean CSVs, validate against schema, push to S3. GitRecombo compiles the tools, embeds schemas into a GGUF, and ships a single artifact the data team can run via Ollama.\n\n4) Rapid domain tooling from curated OSS\n- A fintech researcher selects 5 Awesome-Go crypto libs. In 90 seconds, she gets callable pricing, risk calc, and encoding functions. The LLM stitches them to evaluate a new product scenario with deterministic schemas and reproducible binaries.\n\n5) Compliance-friendly assistants\n- Legal team uses an on-prem LLM whose tool surface is frozen inside GGUF metadata: each function has a documented schema, version, and tests. Auditors diff the GGUF header to see exactly what the model could call at the time of a decision.\n\n6) Controlled prototyping at hackathons\n- Participants explore hundreds of Go capabilities without depending on flaky web APIs. The organizer ships a curated skillpack; everyone starts building agents immediately.\n\n7) Site Reliability “playbooks that execute themselves”\n- SREs codify common runbooks as tool sequences in LangFlow. The export step bakes them into the skillpack so the model can run checks and remediations with guardrails and timeouts.\n\nScalability/extensibility: The artifact-centric model scales by distribution, not centralization; adding a skill is adding a small GGUF/LoRA patch. LangFlow makes it approachable; LangChain lets power users compose pipelines; Ollama keeps ops sane. Limitations: compile time on rare platforms, library API instability, binary size creep, and sandbox complexity. Mitigations: prebuilt cache, semver pinning and tests, binary de-duplication, and sandbox presets.",
+  "innovation_analysis": "Innovation score: 9/10. The core leap is treating the model file as a portable, typed tool registry by embedding schemas and routing into GGUF metadata, and using Ollama’s packaging to co-ship compiled Go skills. This collapses deployment surface area and creates a model-native plugin system without inventing yet another hosted marketplace.\n\nNext steps:\n- Implement gguf-skill-patch CLI to inject/extract tool metadata.\n- Build go-skill-builder (templates + sandbox + cross-compile) targeting 5 exemplar Awesome-Go libs.\n- Create LangChain codegen chain to synthesize JSON Schemas and tests from READMEs.\n- Add LangFlow nodes for SkillPack Compose/Export and a Skill Health dashboard.\n- Integrate llama.cpp GBnF in the tool-call channel and measure JSON validity.\n\nKey metrics:\n- Time from repo URL to callable tool; JSON validity rate; tool-call p95 latency; end-to-end task success on 5 workflows; binary + model footprint.\n\nTools/frameworks:\n- llama.cpp with GBnF + LoRA; Ollama Modelfile; Go toolchain + gRPC; NATS (optional); LangChain + LangFlow; seccomp/apparmor; JSON Schema and OpenAPI generators.",
+  "sources": [
+    {
+      "name": "ggml-org/llama.cpp",
+      "url": "https://github.com/ggml-org/llama.cpp",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# llama.cpp\n\n![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)\n\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)\n[![Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp)](https://github.com/ggml-org/llama.cpp/releases)\n[![Server](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml/badge.svg)](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml)\n\n[Manifesto](https://github.com/ggml-org/llama.cpp/discussions/205) / [ggml](https://github.com/ggml-org/ggml) / [ops](https://github.com/ggml-org/llama.cpp/blob/master/docs/ops.md)\n\nLLM inference in C/C++\n\n## Recent API changes\n\n- [Changelog for `libllama` API](https://github.com/ggml-org/llama.cpp/issues/9289)\n- [Changelog for `llama-server` REST API](https://github.com/ggml-org/llama.cpp/issues/9291)\n\n## Hot topics\n\n- **[guide : running gpt-oss with llama.cpp](https://github.com/ggml-org/llama.cpp/discussions/15396)**\n- **[[FEEDBACK] Better packaging for llama.cpp to support downstream consumers 🤗](https://github.com/ggml-org/llama.cpp/discussions/15313)**\n- Support for the `gpt-oss` model with native MXFP4 format has been added | [PR](https://github.com/ggml-org/llama.cpp/pull/15091) | [Collaboration with NVIDIA](https://blogs.nvidia.com/blog/rtx-ai-garage-openai-oss) | [Comment](https://github.com/ggml-org/llama.cpp/discussions/15095)\n- Hot PRs: [All](https://github.com/ggml-org/llama.cpp/pulls?q=is%3Apr+label%3Ahot+) | [Open](https://github.com/ggml-org/llama.cpp/pulls?q=is%3Apr+label%3Ahot+is%3Aopen)\n- Multimodal support arrived in `llama-server`: [#12898](https://github.com/ggml-org/llama.cpp/pull/12898) | [documentation](./docs/multimodal.md)\n- VS Code extension for FIM completions: https://github.com/ggml-org/llama.vscode\n- Vim/Neovim plugin for FIM completions: https://github.com/ggml-org/llama.vim\n- Introducing GGUF-my-LoRA https://github.com/ggml-org/ll",
+      "scores": {
+        "novelty": 0.8986,
+        "health": 1.0,
+        "relevance": 0.7686,
+        "author_rep": 0.0,
+        "gem_score": 0.9067
+      },
+      "concepts": [
+        "https",
+        "-",
+        "- x",
+        "x",
+        "https //huggingface.co/models",
+        "//huggingface.co/models search",
+        "models https",
+        "models"
+      ]
+    },
+    {
+      "name": "langchain-ai/langchain",
+      "url": "https://github.com/langchain-ai/langchain",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <picture>\n    <source media=\"(prefers-color-scheme: light)\" srcset=\".github/images/logo-dark.svg\">\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\".github/images/logo-light.svg\">\n    <img alt=\"LangChain Logo\" src=\".github/images/logo-dark.svg\" width=\"80%\">\n  </picture>\n</p>\n\n<p align=\"center\">\n    The platform for reliable agents.\n</p>\n\n<p align=\"center\">\n  <a href=\"https://opensource.org/licenses/MIT\" target=\"_blank\">\n      <img src=\"https://img.shields.io/pypi/l/langchain\" alt=\"PyPI - License\">\n  </a>\n  <a href=\"https://pypistats.org/packages/langchain\" target=\"_blank\">\n      <img src=\"https://img.shields.io/pepy/dt/langchain\" alt=\"PyPI - Downloads\">\n  </a>\n  <a href=\"https://pypi.org/project/langchain/#history\" target=\"_blank\">\n      <img src=\"https://img.shields.io/pypi/v/langchain?label=%20\" alt=\"Version\">\n  </a>\n  <a href=\"https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/langchain-ai/langchain\" target=\"_blank\">\n      <img src=\"https://img.shields.io/static/v1?label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode\" alt=\"Open in Dev Containers\">\n  </a>\n  <a href=\"https://codespaces.new/langchain-ai/langchain\" target=\"_blank\">\n      <img src=\"https://github.com/codespaces/badge.svg\" alt=\"Open in Github Codespace\" title=\"Open in Github Codespace\" width=\"150\" height=\"20\">\n  </a>\n  <a href=\"https://codspeed.io/langchain-ai/langchain\" target=\"_blank\">\n      <img src=\"https://img.shields.io/endpoint?url=https://codspeed.io/badge.json\" alt=\"CodSpeed Badge\">\n  </a>\n  <a href=\"https://twitter.com/langchainai\" target=\"_blank\">\n      <img src=\"https://img.shields.io/twitter/url/https/twitter.com/langchainai.svg?style=social&label=Follow%20%40LangChainAI\" alt=\"Twitter / X\">\n  </a>\n</p>\n\nLangChain is a framework for building LLM-powered applications. It helps you chain together interoperable components and third-party integrations to simplify AI application development",
+      "scores": {
+        "novelty": 0.9766,
+        "health": 0.75,
+        "relevance": 0.8093,
+        "author_rep": 0.0,
+        "gem_score": 0.7579
+      },
+      "concepts": [
+        "https",
+        "langchain",
+        "-",
+        "href https",
+        "target _blank",
+        "_blank img",
+        "img src",
+        "src https"
+      ]
+    },
+    {
+      "name": "ollama/ollama",
+      "url": "https://github.com/ollama/ollama",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n  <a href=\"https://ollama.com\">\n    <img alt=\"ollama\" width=\"240\" src=\"https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7\">\n  </a>\n</div>\n\n# Ollama\n\nGet up and running with large language models.\n\n### macOS\n\n[Download](https://ollama.com/download/Ollama.dmg)\n\n### Windows\n\n[Download](https://ollama.com/download/OllamaSetup.exe)\n\n### Linux\n\n```shell\ncurl -fsSL https://ollama.com/install.sh | sh\n```\n\n[Manual install instructions](https://github.com/ollama/ollama/blob/main/docs/linux.md)\n\n### Docker\n\nThe official [Ollama Docker image](https://hub.docker.com/r/ollama/ollama) `ollama/ollama` is available on Docker Hub.\n\n### Libraries\n\n- [ollama-python](https://github.com/ollama/ollama-python)\n- [ollama-js](https://github.com/ollama/ollama-js)\n\n### Community\n\n- [Discord](https://discord.gg/ollama)\n- [Reddit](https://reddit.com/r/ollama)\n\n## Quickstart\n\nTo run and chat with [Gemma 3](https://ollama.com/library/gemma3):\n\n```shell\nollama run gemma3\n```\n\n## Model library\n\nOllama supports a list of models available on [ollama.com/library](https://ollama.com/library 'ollama model library')\n\nHere are some example models that can be downloaded:\n\n| Model              | Parameters | Size  | Download                         |\n| ------------------ | ---------- | ----- | -------------------------------- |\n| Gemma 3            | 1B         | 815MB | `ollama run gemma3:1b`           |\n| Gemma 3            | 4B         | 3.3GB | `ollama run gemma3`              |\n| Gemma 3            | 12B        | 8.1GB | `ollama run gemma3:12b`          |\n| Gemma 3            | 27B        | 17GB  | `ollama run gemma3:27b`          |\n| QwQ                | 32B        | 20GB  | `ollama run qwq`                 |\n| DeepSeek-R1        | 7B         | 4.7GB | `ollama run deepseek-r1`         |\n| DeepSeek-R1        | 671B       | 404GB | `ollama run deepseek-r1:671b`    |\n| Llama 4            | 109B       | 67GB  | `ollama run llama4:scout`        |\n| Llam",
+      "scores": {
+        "novelty": 0.9115,
+        "health": 0.75,
+        "relevance": 0.7935,
+        "author_rep": 0.0,
+        "gem_score": 0.731
+      },
+      "concepts": [
+        "ollama",
+        "ollama run",
+        "run",
+        "https",
+        "###",
+        "model",
+        "shell ollama",
+        "shell"
+      ]
+    },
+    {
+      "name": "langflow-ai/langflow",
+      "url": "https://github.com/langflow-ai/langflow",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<!-- markdownlint-disable MD030 -->\n\n![Langflow logo](./docs/static/img/langflow-logo-color-black-solid.svg)\n\n[![Release Notes](https://img.shields.io/github/release/langflow-ai/langflow?style=flat-square)](https://github.com/langflow-ai/langflow/releases)\n[![PyPI - License](https://img.shields.io/badge/license-MIT-orange)](https://opensource.org/licenses/MIT)\n[![PyPI - Downloads](https://img.shields.io/pypi/dm/langflow?style=flat-square)](https://pypistats.org/packages/langflow)\n[![GitHub star chart](https://img.shields.io/github/stars/langflow-ai/langflow?style=flat-square)](https://star-history.com/#langflow-ai/langflow)\n[![Open Issues](https://img.shields.io/github/issues-raw/langflow-ai/langflow?style=flat-square)](https://github.com/langflow-ai/langflow/issues)\n[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/langflow-ai.svg?style=social&label=Follow%20%40Langflow)](https://twitter.com/langflow_ai)\n[![YouTube Channel](https://img.shields.io/youtube/channel/subscribers/UCn2bInQrjdDYKEEmbpwblLQ?label=Subscribe)](https://www.youtube.com/@Langflow)\n[![Discord Server](https://img.shields.io/discord/1116803230643527710?logo=discord&style=social&label=Join)](https://discord.gg/EqksyE2EX9)\n[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/langflow-ai/langflow)\n\n> [!CAUTION]\n> - Langflow versions 1.6.0 through 1.6.3 have a critical bug where `.env` files are not read, potentially causing security vulnerabilities. **DO NOT** upgrade to these versions if you use `.env` files for configuration. Instead, upgrade to 1.6.4, which includes a fix for this bug.\n> - Windows users of Langflow Desktop should **not** use the in-app update feature to upgrade to Langflow version 1.6.0. For upgrade instructions, see [Windows Desktop update issue](https://docs.langflow.org/release-notes#windows-desktop-update-issue).\n> - Users must update to Langflow >= 1.3 to protect against [CVE-2025-3248](https://nvd.nist.gov/vuln/detail/CVE-2025-3248)\n> - Users ",
+      "scores": {
+        "novelty": 0.8983,
+        "health": 0.75,
+        "relevance": 0.8081,
+        "author_rep": 0.0,
+        "gem_score": 0.7288
+      },
+      "concepts": [
+        "https",
+        "langflow",
+        "-",
+        "style flat-square",
+        "flat-square https",
+        "style",
+        "##",
+        "security"
+      ]
+    },
+    {
+      "name": "avelino/awesome-go",
+      "url": "https://github.com/avelino/awesome-go",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Awesome Go\n\n<a href=\"https://awesome-go.com/\"><img align=\"right\" src=\"https://github.com/avelino/awesome-go/raw/main/tmpl/assets/logo.png\" alt=\"awesome-go\" title=\"awesome-go\" /></a>\n\n[![Build Status](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml?query=branch%3Amain)\n[![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome)\n[![Slack Widget](https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=red)](https://gophers.slack.com/messages/awesome)\n[![Netlify Status](https://api.netlify.com/api/v1/badges/83a6dcbe-0da6-433e-b586-f68109286bd5/deploy-status)](https://app.netlify.com/sites/awesome-go/deploys)\n[![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/avelino/awesome-go/)\n[![Last Commit](https://img.shields.io/github/last-commit/avelino/awesome-go)](https://github.com/avelino/awesome-go/commits/main)\n\nWe use the _[Golang Bridge](https://github.com/gobridge/about-us/blob/master/README.md)_ community Slack for instant communication, follow the [form here to join](https://invite.slack.golangbridge.org/).\n\n<a href=\"https://www.producthunt.com/posts/awesome-go?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-awesome-go\" target=\"_blank\"><img src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=291535&theme=light\" alt=\"awesome-go - Curated list awesome Go frameworks, libraries and software | Product Hunt\" style=\"width: 250px; height: 54px;\" width=\"250\" height=\"54\" /></a>\n\n**Sponsorships:**\n\n_Special thanks to_\n\n<div align=\"center\">\n<table cellpadding=\"5\">\n<tbody align=\"center\">\n<tr>\n<td colspan=\"2\">\n<a href=\"https://bit.ly/awesome-go-workos\">\n<img src=\"https://avelino.run/sponsors/workos-logo-white-bg.svg\" width=\"200\" alt=\"WorkOS\"><br/>\n<b>Your app",
+      "scores": {
+        "novelty": 0.4694,
+        "health": 0.5,
+        "relevance": 0.7961,
+        "author_rep": 0.0,
+        "gem_score": 0.5147
+      },
+      "concepts": [
+        "-",
+        "https",
+        "awesome go",
+        "awesome",
+        "go",
+        "href https",
+        "src https",
+        "- database"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "hacking",
+      "data",
+      "llm",
+      "nvidia"
+    ],
+    "custom_queries": [],
+    "days": 30,
+    "licenses": [
+      "MIT",
+      "Apache-2.0"
+    ],
+    "max": 6,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution for unexpected technology mixing the topics",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 5,
+    "exclude_processed": false,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "hacking",
+      "data",
+      "llm",
+      "nvidia"
+    ],
+    "days": 30,
+    "explore_longtail": false,
+    "probe_limit": 5,
+    "candidates": 5,
+    "probed": 5,
+    "selected": 5,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "ggml-org/llama.cpp",
+        "url": "https://github.com/ggml-org/llama.cpp",
+        "license": "MIT",
+        "role": "module (C++)",
+        "novelty_score": 0.8986,
+        "relevance": 0.7686,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "- x",
+          "x",
+          "https //huggingface.co/models",
+          "//huggingface.co/models search",
+          "models https",
+          "models"
+        ],
+        "gem_score": 0.9067
+      },
+      {
+        "name": "langchain-ai/langchain",
+        "url": "https://github.com/langchain-ai/langchain",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.9766,
+        "relevance": 0.8093,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "langchain",
+          "-",
+          "href https",
+          "target _blank",
+          "_blank img",
+          "img src",
+          "src https"
+        ],
+        "gem_score": 0.7579
+      },
+      {
+        "name": "ollama/ollama",
+        "url": "https://github.com/ollama/ollama",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.9115,
+        "relevance": 0.7935,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "ollama",
+          "ollama run",
+          "run",
+          "https",
+          "###",
+          "model",
+          "shell ollama",
+          "shell"
+        ],
+        "gem_score": 0.731
+      },
+      {
+        "name": "langflow-ai/langflow",
+        "url": "https://github.com/langflow-ai/langflow",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.8983,
+        "relevance": 0.8081,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "langflow",
+          "-",
+          "style flat-square",
+          "flat-square https",
+          "style",
+          "##",
+          "security"
+        ],
+        "gem_score": 0.7288
+      },
+      {
+        "name": "avelino/awesome-go",
+        "url": "https://github.com/avelino/awesome-go",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.4694,
+        "relevance": 0.7961,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "awesome go",
+          "awesome",
+          "go",
+          "href https",
+          "src https",
+          "- database"
+        ],
+        "gem_score": 0.5147
+      }
+    ],
+    "architecture_ascii": "[1] ggml-org/llama.cpp  →  [2] langchain-ai/langchain  →  [3] ollama/ollama  →  [4] langflow-ai/langflow  →  [5] avelino/awesome-go\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "hacking",
+        "data",
+        "llm",
+        "nvidia"
+      ],
+      "days": 30,
+      "explore_longtail": false,
+      "probe_limit": 5,
+      "candidates": 5,
+      "probed": 5,
+      "selected": 5,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

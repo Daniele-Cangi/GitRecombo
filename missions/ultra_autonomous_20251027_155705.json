@@ -1,0 +1,766 @@
+{
+  "timestamp": "2025-10-27T15:57:05.668765",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build an Embodied Course Synthesizer that converts any rights-cleared tutorial video into a physics-validated, code-augmented, conversational micro‑course in under 15 minutes. The pipeline: yt‑dlp sources video and metadata; ESPnet transcribes and diarizes; LosslessCut logic segments procedural steps; Ollama hosts on‑device LLMs (e.g., llama3.1:8b‑instruct + qwen2.5‑coder) to extract action graphs and generate assessments; Genesis replays the extracted procedure in simulation to verify feasibility; PyTorch Lightning fine‑tunes domain adapters; freeCodeCamp’s curriculum model packages interactive tasks; React+Axios delivers the course; Huginn orchestrates agents; Harness runs content CI; pandas manages datasets; optional WeChat delivery via chatgpt‑on‑wechat. Success: <15m ingestion→course, ≥85% step‑to‑sim fidelity, <8% WER, ≥20% learning gain in A/B tests. Why it matters: it turns the world’s procedural knowledge stream into safe, hands‑on labs grounded in physics—not just text.",
+  "repository_synergy": "THE INSIGHT: Tutorial videos are tacit knowledge compressed into noisy narratives. LLMs can propose plans from them, but lack grounding; simulators can verify actions but don’t know what to simulate. The hidden bridge is to treat video → plan → simulation → assessment as a closed control loop, where each component injects constraints the others can’t self‑generate. The aha: use Genesis as a critic for language‑derived procedures, and use video‑derived timing to constrain the simulator. That creates a self‑correcting pipeline that turns demonstrations into interactives.\n\nWHY THESE REPOS: yt‑dlp is not just a downloader—it’s a high‑fidelity metadata harvester (chapters, descriptions, formats) powering step detection. LosslessCut encodes a philosophy: edits without recompression, segment by keyframe/peak—repurposed as headless ffmpeg heuristics to align action boundaries with ASR. ESPnet brings state‑of‑the‑art ASR/TTS and diarization to extract role‑specific imperatives (“now tighten the screw”). Ollama offers local, swappable models with low‑latency token streaming and a standard REST API—crucial for reproducible, offline course builds. Genesis is the rare physics engine designed for large‑scale programmatic experiments—perfect for verifying the physical plausibility of a language‑extracted procedure graph. PyTorch Lightning lets us fine‑tune lightweight adapters (ASR domain lexicons, action‑classifier heads) without boilerplate. freeCodeCamp contributes a schema for lessons, hints, and tests so we can package outputs as credible curricula. React + Axios provides a composable client for progressive disclosure (watch → simulate → code). Huginn’s agents turn the pipeline event‑driven (topic triggers, ingestion alarms), while Harness makes content a first‑class CI artifact (courses are versioned builds). pandas stitches datasets: segments, embeddings, error traces. chatgpt‑on‑wechat is a social surface for regions where chat first beats web first. javascript‑algorithms offers canonical solutions and test harnesses—repurposed as auto‑validators for generated coding tasks.\n\nTHE SYNERGY: The illicit connection is letting a physics simulator grade an LLM’s plan, and letting video timing discipline the simulator. ESPnet pulls the who/what/when from speech; LosslessCut‑style heuristics create clip‑level alignment; Ollama drafts a structured action graph (tools, forces, constraints); Genesis attempts the plan and emits counterexamples when physics disagrees (torque insufficient, collisions, unreachable pose). Those counterexamples are fed back to Ollama to repair the plan with concrete numeric constraints. The repaired plan yields assessments: multiple‑choice grounded in failure modes, and code tasks backed by javascript‑algorithms tests. freeCodeCamp packaging transforms this into a shareable course while Harness ensures quality gates (WER, sim‑fidelity) pass before publish. Huginn keeps it alive: when a topic trends, a new course builds automatically.\n\nTHE INNOVATION: We stop treating LLM outputs as final and treat them as hypotheses subject to physics and audio‑timed evidence. Combining local LLMs (Ollama), programmatic simulation (Genesis), and zero‑reencode segmentation (LosslessCut’s strategy) yields a system that synthesizes interactive, verifiable learning from the stream of the web—without cloud lock‑in or brittle scraping tricks.",
+  "technical_architecture": "Data flow\n1) Discovery & rights: Huginn TopicAgent watches trends/feeds; only rights‑cleared URLs pass. It emits IngestRequested(topic, url).\n2) Ingest: yt‑dlp Python service downloads video+captions+chapters+thumbnails; stores to object storage (e.g., S3‑compatible). Metadata normalized to pandas DataFrame.\n3) Speech & segmentation: ESPnet ASR service produces transcript + word‑level timestamps + speaker turns. A headless cutter service (ffmpeg, guided by LosslessCut heuristics: silence detection + keyframe proximity) proposes segments aligned to imperative phrases. Output: segments.json, waveform indices.\n4) Plan extraction: Ollama REST (/api/generate) with llama3.1:8b‑instruct parses transcript+segments into an Action Graph: nodes(action, tool, params, time window), edges(depends_on). Qwen2.5‑coder in Ollama emits unit‑tested coding challenges aligned to algorithmic motifs detected via keywords and mapping against javascript‑algorithms inventory.\n5) Physics verification: Genesis microservice loads canonical assets (tools/parts). It attempts to execute action nodes respecting time windows (from video). It returns SimTrace (poses, forces, collisions) and a ViolationSet. If violations occur, a RepairPrompt with numeric diagnostics goes back to Ollama for parameter refinement.\n6) Packaging: A Builder compiles assets into a freeCodeCamp‑compatible curriculum JSON (lessons, hints, tests), embeds React components for side‑by‑side: video segment, live Genesis viewport (WebRTC/stream), and code editor. Axios fetches lesson JSON from the Builder API.\n7) CI/CD & gating: Harness pipelines run unit tests (javascript‑algorithms), quality gates (WER < 8%, sim‑fidelity ≥ 85%, plan‑repair ≤ 3 loops). On pass, publish to catalog. Versioned artifacts tracked via Git LFS or registry.\n8) Delivery: React frontend serves web users. chatgpt‑on‑wechat bot mirrors lessons with text/video snippets and inline quizzes; Huginn routes user progress signals to analytics.\n\nAPIs and interfaces\n- yt‑dlp: Python API with postprocessors; expose /ingest POST {url} → job id.\n- ESPnet: /asr POST {audio_uri} → {transcript, timestamps, speakers}.\n- Cutter: /segments POST {transcript, audio_uri} → segments.json.\n- Ollama: /api/generate with system/tooling prompts; models: llama3.1:8b‑instruct (planning), qwen2.5‑coder (code), mixtral‑8x7b (fallback).\n- Genesis: /simulate POST {action_graph, assets} → {SimTrace, Violations}.\n- Builder: /course PUT {metadata, assets} → courseId; /course/:id GET.\n- Harness: pipeline triggers via Webhook on course build; status back to Huginn.\n\nChallenges and solutions\n- Alignment drift: combine ASR timestamps with visual cuts; penalize segment boundaries that split imperative clauses; DP optimization chooses boundaries minimizing a composite loss.\n- Sim realism vs latency: use coarse physics for draft (lower substeps), promote to fine only if violations persist; cache assets and compiled scenes; run Genesis headless with GPU batch.\n- LLM hallucination of tools: tool set constrained by transcript keywords + chapter descriptions; reject actions referencing unseen tools.\n- Evaluation leakage in code tasks: tests generated then mutated against canonical solutions from javascript‑algorithms to ensure non‑triviality; Harness fuzzing pass checks for shortcut patterns.\n- Privacy/offline: Ollama and ESPnet run locally; no third‑party APIs required.\n\nNon‑obvious optimizations\n- Use pandas to store a segment‑graph index (Parquet) enabling vector‑free retrieval by time/role/tool. \n- Pre‑warm Ollama with speculative decoding (short context windows) for repair loops.\n- Leverage LosslessCut’s spirit: prefer smart GOP‑aligned cuts to avoid re‑encode; we keep original quality for teaching clarity.",
+  "expected_impact": "- Maker‑to‑Robot Labs: A DIY furniture assembly video becomes an interactive robotics lab. Learners adjust torque/sequence in Genesis to avoid over‑constraint detected by the simulator, then answer quizzes built from real failure traces.\n- Field Ops Safety Refreshers: Drone battery swap videos convert into micro‑courses with physics‑verified steps (safe prop stop, magnetic latch order). Violations generate targeted MCQs tied to exact timestamps.\n- Language‑grounded Coding Katas: When a tutorial mentions “dynamic programming for path planning,” the system issues a matched code task using javascript‑algorithms’ test harness, plus a Genesis scenario showing why suboptimal choices cause longer paths.\n- Multilingual How‑To Compression: ESPnet builds bilingual transcripts; Ollama composes language‑aware hints; WeChat bot serves regions where web is secondary. Stable local inference enables offline classrooms.\n- Compliance That Isn’t Boring: Lockout‑tagout videos become scenario checks; learners must achieve a no‑voltage state in Genesis before the quiz unlocks. Harness assures each course meets sim fidelity gates before deploy.\n- Rapid Incident Debriefs: A new tool recall appears; Huginn triggers ingestion of official guidance video; 30 minutes later a validated micro‑lesson is live with measured torque/sequence corrections.\n- Research Workflow: Instructors upload lab demos; Lightning fine‑tunes ASR domain vocab; pandas provides cohort analytics on which action nodes cause confusion, informing targeted remediations.\n\nLimitations and mitigations\n- Asset scarcity: If Genesis lacks models, we proxy with simplified primitives and flag lower confidence.\n- Noisy videos: High WER inflates plan errors; we surface a human‑in‑the‑loop transcript editor.\n- Legal constraints: Only ingest content with explicit rights; Huginn includes license filters and manual approvals.\n- Hard‑to‑simulate tasks: For soft/fluids, we switch to guidance mode (no hard gating) but still ground timing and safety checks.",
+  "innovation_analysis": "Innovation score: 9/10. The unconventional core is using a physics engine as a grading oracle for LLM‑extracted procedures, driven by video‑timed constraints, then packaging outcomes into a credible curriculum with CI gates. It repurposes tooling in orthogonal domains: downloader as evidence harvester, lossless editor as alignment engine, CI as course QA.\n\nNext steps\n- Prototype minimal slice on one category (e.g., furniture assembly): 5 videos → 5 micro‑courses.\n- Implement Plan→Sim→Repair loop with two Ollama models and a single Genesis scene.\n- Build React lesson shell and freeCodeCamp exporter.\n\nKey metrics\n- Build time per course; repair loops per course; sim fidelity vs. human rubric; WER; assessment discrimination index; learner time‑to‑mastery.\n\nEssential tools\n- Dockerized services (yt‑dlp, ESPnet, Ollama, Genesis), ffmpeg, PyTorch Lightning, Harness pipelines, Huginn event bus, React+Axios, pandas for dataops.",
+  "sources": [
+    {
+      "name": "yt-dlp/yt-dlp",
+      "url": "https://github.com/yt-dlp/yt-dlp",
+      "description": "",
+      "language": "module",
+      "license": "Unlicense",
+      "readme_snippet": "<!-- MANPAGE: BEGIN EXCLUDED SECTION -->\n<div align=\"center\">\n\n[![YT-DLP](https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/.github/banner.svg)](#readme)\n\n[![Release version](https://img.shields.io/github/v/release/yt-dlp/yt-dlp?color=brightgreen&label=Download&style=for-the-badge)](#installation \"Installation\")\n[![PyPI](https://img.shields.io/badge/-PyPI-blue.svg?logo=pypi&labelColor=555555&style=for-the-badge)](https://pypi.org/project/yt-dlp \"PyPI\")\n[![Donate](https://img.shields.io/badge/_-Donate-red.svg?logo=githubsponsors&labelColor=555555&style=for-the-badge)](Maintainers.md#maintainers \"Donate\")\n[![Discord](https://img.shields.io/discord/807245652072857610?color=blue&labelColor=555555&label=&logo=discord&style=for-the-badge)](https://discord.gg/H5MNcFW63r \"Discord\")\n[![Supported Sites](https://img.shields.io/badge/-Supported_Sites-brightgreen.svg?style=for-the-badge)](supportedsites.md \"Supported Sites\")\n[![License: Unlicense](https://img.shields.io/badge/-Unlicense-blue.svg?style=for-the-badge)](LICENSE \"License\")\n[![CI Status](https://img.shields.io/github/actions/workflow/status/yt-dlp/yt-dlp/core.yml?branch=master&label=Tests&style=for-the-badge)](https://github.com/yt-dlp/yt-dlp/actions \"CI Status\")\n[![Commits](https://img.shields.io/github/commit-activity/m/yt-dlp/yt-dlp?label=commits&style=for-the-badge)](https://github.com/yt-dlp/yt-dlp/commits \"Commit History\")\n[![Last Commit](https://img.shields.io/github/last-commit/yt-dlp/yt-dlp/master?label=&style=for-the-badge&display_timestamp=committer)](https://github.com/yt-dlp/yt-dlp/pulse/monthly \"Last activity\")\n\n</div>\n<!-- MANPAGE: END EXCLUDED SECTION -->\n\nyt-dlp is a feature-rich command-line audio/video downloader with support for [thousands of sites](supportedsites.md). The project is a fork of [youtube-dl](https://github.com/ytdl-org/youtube-dl) based on the now inactive [youtube-dlc](https://github.com/blackjack4494/yt-dlc).\n\n<!-- MANPAGE: MOVE \"USAGE AND OPTIONS\" SECTION HERE -->\n\n<!-- MANP",
+      "scores": {
+        "novelty": 0.8583,
+        "health": 0.75,
+        "relevance": 0.8011,
+        "author_rep": 0.0,
+        "gem_score": 0.8382
+      },
+      "concepts": [
+        "https",
+        "style for-the-badge",
+        "--",
+        "style",
+        "for-the-badge",
+        "options",
+        "-- manpage",
+        "excluded section"
+      ]
+    },
+    {
+      "name": "ollama/ollama",
+      "url": "https://github.com/ollama/ollama",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n  <a href=\"https://ollama.com\">\n    <img alt=\"ollama\" width=\"240\" src=\"https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7\">\n  </a>\n</div>\n\n# Ollama\n\nGet up and running with large language models.\n\n### macOS\n\n[Download](https://ollama.com/download/Ollama.dmg)\n\n### Windows\n\n[Download](https://ollama.com/download/OllamaSetup.exe)\n\n### Linux\n\n```shell\ncurl -fsSL https://ollama.com/install.sh | sh\n```\n\n[Manual install instructions](https://github.com/ollama/ollama/blob/main/docs/linux.md)\n\n### Docker\n\nThe official [Ollama Docker image](https://hub.docker.com/r/ollama/ollama) `ollama/ollama` is available on Docker Hub.\n\n### Libraries\n\n- [ollama-python](https://github.com/ollama/ollama-python)\n- [ollama-js](https://github.com/ollama/ollama-js)\n\n### Community\n\n- [Discord](https://discord.gg/ollama)\n- [Reddit](https://reddit.com/r/ollama)\n\n## Quickstart\n\nTo run and chat with [Gemma 3](https://ollama.com/library/gemma3):\n\n```shell\nollama run gemma3\n```\n\n## Model library\n\nOllama supports a list of models available on [ollama.com/library](https://ollama.com/library 'ollama model library')\n\nHere are some example models that can be downloaded:\n\n| Model              | Parameters | Size  | Download                         |\n| ------------------ | ---------- | ----- | -------------------------------- |\n| Gemma 3            | 1B         | 815MB | `ollama run gemma3:1b`           |\n| Gemma 3            | 4B         | 3.3GB | `ollama run gemma3`              |\n| Gemma 3            | 12B        | 8.1GB | `ollama run gemma3:12b`          |\n| Gemma 3            | 27B        | 17GB  | `ollama run gemma3:27b`          |\n| QwQ                | 32B        | 20GB  | `ollama run qwq`                 |\n| DeepSeek-R1        | 7B         | 4.7GB | `ollama run deepseek-r1`         |\n| DeepSeek-R1        | 671B       | 404GB | `ollama run deepseek-r1:671b`    |\n| Llama 4            | 109B       | 67GB  | `ollama run llama4:scout`        |\n| Llam",
+      "scores": {
+        "novelty": 0.8562,
+        "health": 0.75,
+        "relevance": 0.7935,
+        "author_rep": 0.0,
+        "gem_score": 0.7155
+      },
+      "concepts": [
+        "ollama",
+        "ollama run",
+        "run",
+        "https",
+        "###",
+        "model",
+        "shell ollama",
+        "shell"
+      ]
+    },
+    {
+      "name": "Genesis-Embodied-AI/Genesis",
+      "url": "https://github.com/Genesis-Embodied-AI/Genesis",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "![Genesis](imgs/big_text.png)\r\n\r\n![Teaser](imgs/teaser.png)\r\n\r\n[![PyPI - Version](https://img.shields.io/pypi/v/genesis-world)](https://pypi.org/project/genesis-world/)\r\n[![PyPI Downloads](https://static.pepy.tech/badge/genesis-world)](https://pepy.tech/projects/genesis-world)\r\n[![GitHub Issues](https://img.shields.io/github/issues/Genesis-Embodied-AI/Genesis)](https://github.com/Genesis-Embodied-AI/Genesis/issues)\r\n[![GitHub Discussions](https://img.shields.io/github/discussions/Genesis-Embodied-AI/Genesis)](https://github.com/Genesis-Embodied-AI/Genesis/discussions)\r\n[![Discord](https://img.shields.io/discord/1322086972302430269?logo=discord)](https://discord.gg/nukCuhB47p)\r\n<a href=\"https://drive.google.com/uc?export=view&id=1ZS9nnbQ-t1IwkzJlENBYqYIIOOZhXuBZ\"><img src=\"https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white\" height=\"20\" style=\"display:inline\"></a>\r\n\r\n[![README in English](https://img.shields.io/badge/English-d9d9d9)](./README.md)\r\n[![README en Français](https://img.shields.io/badge/Francais-d9d9d9)](./README_FR.md)\r\n[![한국어 README](https://img.shields.io/badge/한국어-d9d9d9)](./README_KR.md)\r\n[![简体中文版自述文件](https://img.shields.io/badge/简体中文-d9d9d9)](./README_CN.md)\r\n[![日本語版 README](https://img.shields.io/badge/日本語-d9d9d9)](./README_JA.md)\r\n\r\n# Genesis\r\n\r\n## 🔥 News\r\n- [2025-08-05] Released v0.3.0 🎊 🎉\r\n- [2025-07-02] The development of Genesis is now officially supported by [Genesis AI](https://genesis-ai.company/).\r\n- [2025-01-09] We released a [detailed performance benchmarking and comparison report](https://github.com/zhouxian/genesis-speed-benchmark) on Genesis, together with all the test scripts.\r\n- [2025-01-08] Released v0.2.1 🎊 🎉\r\n- [2025-01-08] Created [Discord](https://discord.gg/nukCuhB47p) and [Wechat](https://drive.google.com/uc?export=view&id=1ZS9nnbQ-t1IwkzJlENBYqYIIOOZhXuBZ) group.\r\n- [2024-12-25] Added a [docker](#docker) including support for the ray-tracing renderer\r\n- [2024-12-24] Added guidelines fo",
+      "scores": {
+        "novelty": 0.6429,
+        "health": 1.0,
+        "relevance": 0.7955,
+        "author_rep": 0.0,
+        "gem_score": 0.7041
+      },
+      "concepts": [
+        "https",
+        "genesis",
+        "-",
+        "docker",
+        ".",
+        "physics",
+        "install",
+        ". -"
+      ]
+    },
+    {
+      "name": "freeCodeCamp/freeCodeCamp",
+      "url": "https://github.com/freeCodeCamp/freeCodeCamp",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "[![freeCodeCamp Social Banner](https://cdn.freecodecamp.org/platform/universal/fcc_banner_new.png)](https://www.freecodecamp.org/)\n\n[![first-timers-only Friendly](https://img.shields.io/badge/first--timers--only-friendly-blue.svg)](https://www.firsttimersonly.com/)\n[![Discord](https://img.shields.io/discord/692816967895220344?logo=discord&label=Discord&color=5865F2)](https://discord.gg/PRyKn3Vbay)\n[![LFX Active Contributors](https://insights.linuxfoundation.org/api/badge/active-contributors?project=freecodecamp&repos=https://github.com/freeCodeCamp/freeCodeCamp)](https://insights.linuxfoundation.org/project/freecodecamp/repository/freecodecamp-freecodecamp)\n\n## freeCodeCamp.org's open-source codebase and curriculum\n\n[freeCodeCamp.org](https://www.freecodecamp.org) is a friendly community where you can learn to code for free. It is run by a [donor-supported 501(c)(3) charity](https://www.freecodecamp.org/donate) to help millions of busy adults transition into tech. Our community has already helped more than 100,000 people get their first developer job.\n\nOur full-stack web development and machine learning curriculum is completely free and self-paced. We have thousands of interactive coding challenges to help you expand your skills.\n\n## Table of Contents\n\n- [Certifications](#certifications)\n- [The Learning Platform](#the-learning-platform)\n- [Reporting Bugs and Issues](#reporting-bugs-and-issues)\n- [Reporting Security Issues and Responsible Disclosure](#reporting-security-issues-and-responsible-disclosure)\n- [Contributing](#contributing)\n- [Platform, Build and Deployment Status](#platform-build-and-deployment-status)\n- [License](#license)\n\n### Certifications\n\nfreeCodeCamp.org offers several free developer certifications. Each of these certifications involves building 5 required web app projects, along with hundreds of optional coding challenges to help you prepare for those projects. We estimate that each certification will take a beginner programmer around 300 hours t",
+      "scores": {
+        "novelty": 0.9769,
+        "health": 0.5,
+        "relevance": 0.7775,
+        "author_rep": 0.0,
+        "gem_score": 0.6884
+      },
+      "concepts": [
+        "https",
+        "- learn",
+        "-",
+        "learn",
+        "building",
+        "learn css",
+        "css",
+        "certifications"
+      ]
+    },
+    {
+      "name": "axios/axios",
+      "url": "https://github.com/axios/axios",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "\n<h3 align=\"center\"> 🥇 Gold sponsors <br> </h3> <table align=\"center\" width=\"100%\"><tr width=\"33.333333333333336%\"><td align=\"center\" width=\"33.333333333333336%\"> <a href=\"https://stytch.com/?utm_source&#x3D;oss-sponsorship&amp;utm_medium&#x3D;paid_sponsorship&amp;utm_content&#x3D;website-link&amp;utm_campaign&#x3D;axios-http\" style=\"padding: 10px; display: inline-block\" target=\"_blank\"> <picture> <source width=\"200px\" height=\"38px\" media=\"(prefers-color-scheme: dark)\" srcset=\"https://axios-http.com/assets/sponsors/stytch_white.png\"> <img width=\"200px\" height=\"38px\" src=\"https://axios-http.com/assets/sponsors/stytch.png\" alt=\"Stytch\"/> </picture> </a> <p align=\"center\" title=\"API-first authentication, authorization, and fraud prevention\">API-first authentication, authorization, and fraud prevention</p> <p align=\"center\"> <a href=\"https://stytch.com/?utm_source&#x3D;oss-sponsorship&amp;utm_medium&#x3D;paid_sponsorship&amp;utm_content&#x3D;website-link&amp;utm_campaign&#x3D;axios-http\" target=\"_blank\"><b>Website</b></a> | <a href=\"https://stytch.com/docs?utm_source&#x3D;oss-sponsorship&amp;utm_medium&#x3D;paid_sponsorship&amp;utm_content&#x3D;docs-link&amp;utm_campaign&#x3D;axios-http\" target=\"_blank\"><b>Documentation</b></a> | <a href=\"https://github.com/stytchauth/stytch-node?utm_source&#x3D;oss-sponsorship&amp;utm_medium&#x3D;paid_sponsorship&amp;utm_content&#x3D;node-sdk&amp;utm_campaign&#x3D;axios-http\" target=\"_blank\"><b>Node.js</b></a> </p>\n</td><td align=\"center\" width=\"33.333333333333336%\"> <a href=\"https://www.principal.com/about-us?utm_source&#x3D;axios&amp;utm_medium&#x3D;sponsorlist&amp;utm_campaign&#x3D;sponsorship\" style=\"padding: 10px; display: inline-block\" target=\"_blank\"> <img width=\"133px\" height=\"43px\" src=\"https://axios-http.com/assets/sponsors/principal.svg\" alt=\"Principal Financial Group\"/> </a> <p align=\"center\" title=\"We’re bound by one common purpose: to give you the financial tools, resources and information you need to live your best life.",
+      "scores": {
+        "novelty": 0.7112,
+        "health": 0.75,
+        "relevance": 0.7605,
+        "author_rep": 0.0,
+        "gem_score": 0.6599
+      },
+      "concepts": [
+        "#x3d",
+        "amp",
+        "align center",
+        "https",
+        "href https",
+        "utm_source #x3d",
+        "amp utm_medium",
+        "utm_medium #x3d"
+      ]
+    },
+    {
+      "name": "Lightning-AI/pytorch-lightning",
+      "url": "https://github.com/Lightning-AI/pytorch-lightning",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"center\">\n\n<img alt=\"Lightning\" src=\"https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/app-2/ptl_banner.png\" width=\"800px\" style=\"max-width: 100%;\">\n\n<br/>\n<br/>\n\n**The deep learning framework to pretrain and finetune AI models.**\n\n**Deploying models?** Check out [LitServe](https://github.com/Lightning-AI/litserve?utm_source=ptl_readme&utm_medium=referral&utm_campaign=ptl_readme), the PyTorch Lightning for inference engines\n\n______________________________________________________________________\n\n<p align=\"center\">\n    <a href=\"#quick-start\" style=\"margin: 0 10px;\">Quick start</a> •\n  <a href=\"#examples\">Examples</a> •\n  <a href=\"#why-pytorch-lightning\">PyTorch Lightning</a> •\n  <a href=\"#lightning-fabric-expert-control\">Fabric</a> •\n  <a href=\"https://lightning.ai/?utm_source=ptl_readme&utm_medium=referral&utm_campaign=ptl_readme\">Lightning Cloud</a> •   \n  <a href=\"#community\">Community</a> •\n  <a href=\"https://pytorch-lightning.readthedocs.io/en/stable/\">Docs</a>\n</p>\n\n<!-- DO NOT ADD CONDA DOWNLOADS... README CHANGES MUST BE APPROVED BY EDEN OR WILL -->\n\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pytorch-lightning)](https://pypi.org/project/pytorch-lightning/)\n[![PyPI Status](https://badge.fury.io/py/pytorch-lightning.svg)](https://badge.fury.io/py/pytorch-lightning)\n[![PyPI - Downloads](https://img.shields.io/pypi/dm/pytorch-lightning)](https://pepy.tech/project/pytorch-lightning)\n[![Conda](https://img.shields.io/conda/v/conda-forge/lightning?label=conda&color=success)](https://anaconda.org/conda-forge/lightning)\n[![codecov](https://codecov.io/gh/Lightning-AI/pytorch-lightning/graph/badge.svg?token=SmzX8mnKlA)](https://codecov.io/gh/Lightning-AI/pytorch-lightning)\n\n[![Discord](https://img.shields.io/discord/1077906959069626439?style=plastic)](https://discord.gg/VptPCZkGNa)\n![GitHub commit activity](https://img.shields.io/github/commit-activity/w/lightning-ai/lightning)\n[![license](https://img.shields.io/badge/License-Apache%",
+      "scores": {
+        "novelty": 0.4408,
+        "health": 1.0,
+        "relevance": 0.7998,
+        "author_rep": 0.0,
+        "gem_score": 0.6333
+      },
+      "concepts": [
+        "https",
+        "lightning",
+        "ptl_readme",
+        "#",
+        "pytorch",
+        "utm_source ptl_readme",
+        "ptl_readme utm_medium",
+        "utm_medium referral"
+      ]
+    },
+    {
+      "name": "facebook/react",
+      "url": "https://github.com/facebook/react",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# [React](https://react.dev/) &middot; [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/facebook/react/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/react.svg?style=flat)](https://www.npmjs.com/package/react) [![(Runtime) Build and Test](https://github.com/facebook/react/actions/workflows/runtime_build_and_test.yml/badge.svg)](https://github.com/facebook/react/actions/workflows/runtime_build_and_test.yml) [![(Compiler) TypeScript](https://github.com/facebook/react/actions/workflows/compiler_typescript.yml/badge.svg?branch=main)](https://github.com/facebook/react/actions/workflows/compiler_typescript.yml) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://legacy.reactjs.org/docs/how-to-contribute.html#your-first-pull-request)\n\nReact is a JavaScript library for building user interfaces.\n\n* **Declarative:** React makes it painless to create interactive UIs. Design simple views for each state in your application, and React will efficiently update and render just the right components when your data changes. Declarative views make your code more predictable, simpler to understand, and easier to debug.\n* **Component-Based:** Build encapsulated components that manage their own state, then compose them to make complex UIs. Since component logic is written in JavaScript instead of templates, you can easily pass rich data through your app and keep the state out of the DOM.\n* **Learn Once, Write Anywhere:** We don't make assumptions about the rest of your technology stack, so you can develop new features in React without rewriting existing code. React can also render on the server using [Node](https://nodejs.org/en) and power mobile apps using [React Native](https://reactnative.dev/).\n\n[Learn how to use React in your project](https://react.dev/learn).\n\n## Installation\n\nReact has been designed for gradual adoption from the start, and **you can use as little or as much React as you need**:\n",
+      "scores": {
+        "novelty": 0.59,
+        "health": 0.75,
+        "relevance": 0.7868,
+        "author_rep": 0.0,
+        "gem_score": 0.6192
+      },
+      "concepts": [
+        "https",
+        "react",
+        "can",
+        ".",
+        "https //react.dev/learn",
+        "get",
+        "contributing",
+        "https //react.dev/"
+      ]
+    },
+    {
+      "name": "harness/harness",
+      "url": "https://github.com/harness/harness",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# Harness\nHarness Open Source is an open source development platform packed with the power of code hosting, automated DevOps pipelines, hosted development environments (Gitspaces), and artifact registries.\n\n## Overview\nHarness Open source is an open source development platform packed with the power of code hosting, automated DevOps pipelines, Gitspaces, and artifact registries.\n\n\n## Running Harness locally\n> The latest publicly released docker image can be found on [harness/harness](https://hub.docker.com/r/harness/harness).\n\nTo install Harness yourself, simply run the command below. Once the container is up, you can visit http://localhost:3000 in your browser.\n\n```bash\ndocker run -d \\\n  -p 3000:3000 \\\n  -p 3022:3022 \\\n  -v /var/run/docker.sock:/var/run/docker.sock \\\n  -v /tmp/harness:/data \\\n  --name harness \\\n  --restart always \\\n  harness/harness\n```\n> The Harness image uses a volume to store the database and repositories. It is highly recommended to use a bind mount or named volume as otherwise all data will be lost once the container is stopped.\n\nSee [developer.harness.io](https://developer.harness.io/docs/open-source) to learn how to get the most out of Harness.\n\n## Where is Drone?\n\nHarness Open Source represents a massive investment in the next generation of Drone. Where Drone focused solely on continuous integration, Harness adds source code hosting, developer environments (gitspaces), and artifact registries; providing teams with an end-to-end, open source DevOps platform.\n\nThe goal is for Harness to eventually be at full parity with Drone in terms of pipeline capabilities, allowing users to seamlessly migrate from Drone to Harness.\n\nBut, we expect this to take some time, which is why we took a snapshot of Drone as a feature branch [drone](https://github.com/harness/harness/tree/drone) ([README](https://github.com/harness/harness/blob/drone/.github/readme.md)) so it can continue development.\n\nAs for Harness, the development is taking place on the [main](htt",
+      "scores": {
+        "novelty": 0.5095,
+        "health": 0.75,
+        "relevance": 0.8015,
+        "author_rep": 0.0,
+        "gem_score": 0.5929
+      },
+      "concepts": [
+        "harness",
+        "install",
+        "https",
+        "run",
+        "open source",
+        "http //localhost",
+        "##",
+        "can"
+      ]
+    },
+    {
+      "name": "mifi/lossless-cut",
+      "url": "https://github.com/mifi/lossless-cut",
+      "description": "",
+      "language": "module",
+      "license": "GPL-2.0",
+      "readme_snippet": "<div align=\"center\">\n\t<a href=\"https://go.warp.dev/lossless-cut\" target=\"_blank\">\n\t\t<sup>Special thanks to:</sup>\n\t\t<br>\n\t\t<img alt=\"Warp sponsorship\" width=\"400\" src=\"https://github.com/warpdotdev/brand-assets/blob/main/Github/Sponsor/Warp-Github-LG-02.png\">\n\t\t<br>\n\t\t<h>Warp, built for coding with multiple AI agents</b>\n\t\t<br>\n\t\t<sup>Available for macOS, Linux and Windows</sup>\n\t</a>\n</div>\n\n<br>\n\n<div align=\"center\">\n\t<br>\n  <p><a href=\"https://mifi.no/losslesscut/\"><img src=\"src/renderer/src/icon.svg\" width=\"120\" alt=\"LosslessCut\" /></a></p>\n  <p><b>LosslessCut</b></p>\n  The swiss army knife of lossless video/audio editing\n\t<br>\n  <img src=\"https://github.com/mifi/lossless-cut/workflows/Build/release/badge.svg\" />\n  <a href=\"https://paypal.me/mifino/usd\"><img src=\"https://img.shields.io/badge/Donate-PayPal-green.svg\" /></a> <a href=\"https://github.com/mifi/lossless-cut#download\"><img src=\"https://img.shields.io/github/v/release/mifi/lossless-cut\" /></a> <a href=\"https://discord.gg/fhnEREfUJ3\"><img src=\"https://img.shields.io/discord/986051448385183804\" /></a> <a href=\"https://twitter.com/losslesscut\"><img src=\"https://img.shields.io/twitter/follow/losslesscut?label=Twitter&style=social\" alt=\"Twitter\"></a>\n\t<br>\n\t<br>\n  <a href=\"https://mifi.no/thanks/\">Thanks to my supporters</a> and everyone who purchased LosslessCut!\n\t<br>\n\t<br>\n  <p align=\"center\"><img src=\"main_screenshot.jpg\" width=\"600\" alt=\"screenshot\" /></p>\n\t<br>\n\t<br>\n</div>\n\nLosslessCut aims to be the ultimate cross platform FFmpeg GUI for extremely fast and lossless operations on video, audio, subtitle and other related media files.\nThe main feature is lossless trimming and cutting of video and audio files, which is great for saving space by rough-cutting your large video files taken from a video camera, GoPro, drone, etc. It lets you quickly extract the good parts from your videos and discard many gigabytes of data without doing a slow re-encode and thereby losing quality. There are also many more [u",
+      "scores": {
+        "novelty": 0.4666,
+        "health": 0.75,
+        "relevance": 0.808,
+        "author_rep": 0.0,
+        "gem_score": 0.5824
+      },
+      "concepts": [
+        "-",
+        "video",
+        "file",
+        "https",
+        "audio",
+        "cut",
+        "tracks",
+        "br"
+      ]
+    },
+    {
+      "name": "espnet/espnet",
+      "url": "https://github.com/espnet/espnet",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"left\"><img src=\"doc/image/espnet_logo1.png\" width=\"550\"/></div>\n\n# ESPnet: end-to-end speech processing toolkit\n\n|system/pytorch ver.|2.5.1|2.6.0|2.7.1|2.8.0|\n| :---- | :---: | :---: | :---: | :---: |\n|ubuntu/python3.10/pip|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|\n|ubuntu/python3.12/pip|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|[![ci on ubuntu](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_ubuntu.yml?query=branch%3Amaster)|\n|ubuntu/python3.10/conda||[![ci on debian12](https://github.com/espnet/espnet/actions/workflows/ci_on_debian12.yml/badge.svg)](https://github.com/espnet/espnet/actions/workflows/ci_on_debian12.yml?query=branch%3Amaster)||\n|debian12/pyt",
+      "scores": {
+        "novelty": 0.4502,
+        "health": 0.75,
+        "relevance": 0.7994,
+        "author_rep": 0.0,
+        "gem_score": 0.5742
+      },
+      "concepts": [
+        "https",
+        "-",
+        "query branch",
+        "branch 3amaster",
+        "- support",
+        "ci",
+        "query",
+        "branch"
+      ]
+    },
+    {
+      "name": "pandas-dev/pandas",
+      "url": "https://github.com/pandas-dev/pandas",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "<picture align=\"center\">\n  <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://pandas.pydata.org/static/img/pandas_white.svg\">\n  <img alt=\"Pandas Logo\" src=\"https://pandas.pydata.org/static/img/pandas.svg\">\n</picture>\n\n-----------------\n\n# pandas: A Powerful Python Data Analysis Toolkit\n\n| | |\n| --- | --- |\n| Testing | [![CI - Test](https://github.com/pandas-dev/pandas/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/pandas-dev/pandas/actions/workflows/unit-tests.yml) [![Coverage](https://codecov.io/github/pandas-dev/pandas/coverage.svg?branch=main)](https://codecov.io/gh/pandas-dev/pandas) |\n| Package | [![PyPI Latest Release](https://img.shields.io/pypi/v/pandas.svg)](https://pypi.org/project/pandas/) [![PyPI Downloads](https://img.shields.io/pypi/dm/pandas.svg?label=PyPI%20downloads)](https://pypi.org/project/pandas/) [![Conda Latest Release](https://anaconda.org/conda-forge/pandas/badges/version.svg)](https://anaconda.org/conda-forge/pandas) [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/pandas.svg?label=Conda%20downloads)](https://anaconda.org/conda-forge/pandas) |\n| Meta | [![Powered by NumFOCUS](https://img.shields.io/badge/powered%20by-NumFOCUS-orange.svg?style=flat&colorA=E1523D&colorB=007D8A)](https://numfocus.org) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3509134.svg)](https://doi.org/10.5281/zenodo.3509134) [![License - BSD 3-Clause](https://img.shields.io/pypi/l/pandas.svg)](https://github.com/pandas-dev/pandas/blob/main/LICENSE) [![Slack](https://img.shields.io/badge/join_Slack-information-brightgreen.svg?logo=slack)](https://pandas.pydata.org/docs/dev/development/community.html?highlight=slack#community-slack) [![LFX Health Score](https://insights.linuxfoundation.org/api/badge/health-score?project=pandas-dev-pandas)](https://insights.linuxfoundation.org/project/pandas-dev-pandas) |\n\n\n## What is it?\n\n**pandas** is a Python package that provides fast, flexible, and expressive data\nstructures designed to",
+      "scores": {
+        "novelty": 0.461,
+        "health": 0.75,
+        "relevance": 0.7745,
+        "author_rep": 0.0,
+        "gem_score": 0.5715
+      },
+      "concepts": [
+        "https",
+        "-",
+        "data",
+        "pandas",
+        "data sets",
+        "pypi",
+        "conda",
+        "##"
+      ]
+    },
+    {
+      "name": "zhayujie/chatgpt-on-wechat",
+      "url": "https://github.com/zhayujie/chatgpt-on-wechat",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\"><img src= \"https://github.com/user-attachments/assets/31fb4eab-3be4-477d-aa76-82cf62bfd12c\" alt=\"Chatgpt-on-Wechat\" width=\"600\" /></p>\n\n<p align=\"center\">\n   <a href=\"https://github.com/zhayujie/chatgpt-on-wechat/releases/latest\"><img src=\"https://img.shields.io/github/v/release/zhayujie/chatgpt-on-wechat\" alt=\"Latest release\"></a>\n  <a href=\"https://github.com/zhayujie/chatgpt-on-wechat/blob/master/LICENSE\"><img src=\"https://img.shields.io/github/license/zhayujie/chatgpt-on-wechat\" alt=\"License: MIT\"></a>\n  <a href=\"https://github.com/zhayujie/chatgpt-on-wechat\"><img src=\"https://img.shields.io/github/stars/zhayujie/chatgpt-on-wechat?style=flat-square\" alt=\"Stars\"></a> <br/>\n</p>\n\n**chatgpt-on-wechat**（简称CoW）项目是基于大模型的智能对话机器人，支持自由切换多种模型，可接入网页、微信公众号、企业微信应用、飞书、钉钉中使用，能处理文本、语音、图片、文件等多模态消息，支持通过插件访问操作系统和互联网等外部资源，以及基于自有知识库定制企业AI应用。\n\n# 简介\n\n> 该项目既是一个可以开箱即用的对话机器人，也是一个支持高度扩展的AI应用框架，可以通过为项目添加大模型接口、接入渠道、自定义插件来灵活实现各种定制需求。支持的功能如下：\n\n-  ✅   **多端部署：** 有多种部署方式可选择且功能完备，目前已支持网页、微信公众号、企业微信应用、飞书、钉钉等部署方式\n-  ✅   **基础对话：** 私聊及群聊的AI智能回复，支持多轮会话上下文记忆，基础模型支持OpenAI, Claude, Gemini, DeepSeek, 通义千问, Kimi, 文心一言, 讯飞星火, ChatGLM, MiniMax, GiteeAI, ModelScope, LinkAI\n-  ✅   **语音能力：** 可识别语音消息，通过文字或语音回复，支持 openai(whisper/tts), azure, baidu, google 等多种语音模型\n-  ✅   **图像能力：** 支持图片生成、图片识别、图生图，可选择 Dall-E-3, stable diffusion, replicate, midjourney, CogView-3, vision模型\n-  ✅   **丰富插件：** 支持自定义插件扩展，已实现多角色切换、敏感词过滤、聊天记录总结、文档总结和对话、联网搜索、智能体等内置插件\n-  ✅   **Agent能力：** 支持访问浏览器、终端、文件系统、搜索引擎等各类工具，并可通过多智能体协作完成复杂任务，基于 [AgentMesh](https://github.com/MinimalFuture/AgentMesh) 框架实现\n-  ✅   **知识库：** 通过上传知识库自定义专属机器人，可作为数字分身、智能客服、企业智能体使用，基于 [LinkAI](https://link-ai.tech) 实现\n\n## 声明\n\n1. 本项目遵循 [MIT开源协议](/LICENSE)，仅用于技术研究和学习，使用本项目时需遵守所在地法律法规、相关政策以及企业章程，禁止用于任何违法或侵犯他人权益的行为。任何个人、团队和企业，无论以何种方式使用该项目、对何对象提供服务，所产生的一切后果，本项目均不承担任何责任\n2. 境内使用该项目时，建议使用国内厂商的大模型服务，并进行必要的内容安全审核及过滤\n3. 本项目当前主要接入协同办公平台，推荐使用网页、公众号、企微自建应用、钉钉、飞书等接入通道，其他通道为历史产物暂不维护\n\n## 演示\n\nDEMO视频：https://cdn.link-ai.tech/doc/cow_demo.mp4\n\n## 社区\n\n添加小助手微信加入开源项目交流群：\n\n<img width=\"",
+      "scores": {
+        "novelty": 0.4369,
+        "health": 0.75,
+        "relevance": 0.7809,
+        "author_rep": 0.0,
+        "gem_score": 0.5679
+      },
+      "concepts": [
+        "https",
+        "#",
+        "src https",
+        "-",
+        "+",
+        "bot",
+        "img",
+        "src"
+      ]
+    },
+    {
+      "name": "trekhleb/javascript-algorithms",
+      "url": "https://github.com/trekhleb/javascript-algorithms",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# JavaScript Algorithms and Data Structures\n\n> 🇺🇦 UKRAINE [IS BEING ATTACKED](https://war.ukraine.ua/) BY RUSSIAN ARMY. CIVILIANS ARE GETTING KILLED. RESIDENTIAL AREAS ARE GETTING BOMBED.\n> - Help Ukraine via:\n>   - [Serhiy Prytula Charity Foundation](https://prytulafoundation.org/en/)\n>   - [Come Back Alive Charity Foundation](https://savelife.in.ua/en/donate-en/)\n>   - [National Bank of Ukraine](https://bank.gov.ua/en/news/all/natsionalniy-bank-vidkriv-spetsrahunok-dlya-zboru-koshtiv-na-potrebi-armiyi)\n> - More info on [war.ukraine.ua](https://war.ukraine.ua/) and [MFA of Ukraine](https://twitter.com/MFA_Ukraine)\n\n<hr/>\n\n[![CI](https://github.com/trekhleb/javascript-algorithms/workflows/CI/badge.svg)](https://github.com/trekhleb/javascript-algorithms/actions?query=workflow%3ACI+branch%3Amaster)\n[![codecov](https://codecov.io/gh/trekhleb/javascript-algorithms/branch/master/graph/badge.svg)](https://codecov.io/gh/trekhleb/javascript-algorithms)\n![repo size](https://img.shields.io/github/repo-size/trekhleb/javascript-algorithms.svg)\n\nThis repository contains JavaScript based examples of many\npopular algorithms and data structures.\n\nEach algorithm and data structure has its own separate README\nwith related explanations and links for further reading (including ones\nto YouTube videos).\n\n_Read this in other languages:_\n[_简体中文_](README.zh-CN.md),\n[_繁體中文_](README.zh-TW.md),\n[_한국어_](README.ko-KR.md),\n[_日本語_](README.ja-JP.md),\n[_Polski_](README.pl-PL.md),\n[_Français_](README.fr-FR.md),\n[_Español_](README.es-ES.md),\n[_Português_](README.pt-BR.md),\n[_Русский_](README.ru-RU.md),\n[_Türkçe_](README.tr-TR.md),\n[_Italiano_](README.it-IT.md),\n[_Bahasa Indonesia_](README.id-ID.md),\n[_Українська_](README.uk-UA.md),\n[_Arabic_](README.ar-AR.md),\n[_Tiếng Việt_](README.vi-VN.md),\n[_Deutsch_](README.de-DE.md),\n[_Uzbek_](README.uz-UZ.md),\n[_עברית_](README.he-IL.md)\n\n## Data Structures\n\nA data structure is a particular way of organizing and storing data in a computer so that it can\nbe access",
+      "scores": {
+        "novelty": 0.6033,
+        "health": 0.5,
+        "relevance": 0.7805,
+        "author_rep": 0.0,
+        "gem_score": 0.5609
+      },
+      "concepts": [
+        "-",
+        "b",
+        "data",
+        "https",
+        "algorithm",
+        "data structure",
+        "tree",
+        "search"
+      ]
+    },
+    {
+      "name": "huginn/huginn",
+      "url": "https://github.com/huginn/huginn",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "![Huginn](https://raw.github.com/huginn/huginn/master/media/huginn-logo.png \"Your agents are standing by.\")\n\n-----\n\n## What is Huginn?\n\nHuginn is a system for building agents that perform automated tasks for you online.  They can read the web, watch for events, and take actions on your behalf.  Huginn's Agents create and consume events, propagating them along a directed graph.  Think of it as a hackable version of IFTTT or Zapier on your own server.  You always know who has your data.  You do.\n\n![the origin of the name](https://raw.githubusercontent.com/huginn/huginn/master/doc/imgs/the-name.png)\n\n#### Here are some of the things that you can do with Huginn:\n\n* Track the weather and get an email when it's going to rain (or snow) tomorrow (\"Don't forget your umbrella!\")\n* List terms that you care about and receive email when their occurrence on Twitter changes.  (For example, want to know when something interesting has happened in the world of Machine Learning?  Huginn will watch the term \"machine learning\" on Twitter and tell you when there is a spike in discussion.)\n* Watch for air travel or shopping deals\n* Follow your project names on Twitter and get updates when people mention them\n* Scrape websites and receive email when they change\n* Connect to Adioso, HipChat, FTP, IMAP, Jabber, JIRA, MQTT, nextbus, Pushbullet, Pushover, RSS, Bash, Slack, StubHub, translation APIs, Twilio, Twitter, and Weibo, to name a few.\n* Send digest email with things that you care about at specific times during the day\n* Track counts of high frequency events and send an SMS within moments when they spike, such as the term \"san francisco emergency\"\n* Send and receive WebHooks\n* Run custom JavaScript or CoffeeScript functions\n* Track your location over time\n* Create Amazon Mechanical Turk workflows as the inputs, or outputs, of agents (the Amazon Turk Agent is called the \"HumanTaskAgent\"). For example: \"Once a day, ask 5 people for a funny cat photo; send the results to 5 more people to be",
+      "scores": {
+        "novelty": 0.488,
+        "health": 0.5,
+        "relevance": 0.8195,
+        "author_rep": 0.0,
+        "gem_score": 0.5303
+      },
+      "concepts": [
+        "https",
+        "huginn",
+        ".",
+        "agents",
+        "bundle exec",
+        "when",
+        "send",
+        "run"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "drone",
+      "frequency",
+      "data",
+      "LSTM"
+    ],
+    "custom_queries": [],
+    "days": 35,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 14,
+    "explore_longtail": false,
+    "max_stars": 1000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution for unexpected technology mixing the topics",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": false,
+    "use_cache": true
+  },
+  "metrics": {
+    "topics": [
+      "drone",
+      "frequency",
+      "data",
+      "LSTM"
+    ],
+    "days": 35,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 29,
+    "probed": 20,
+    "selected": 14,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "yt-dlp/yt-dlp",
+        "url": "https://github.com/yt-dlp/yt-dlp",
+        "license": "Unlicense",
+        "role": "module (Python)",
+        "novelty_score": 0.8583,
+        "relevance": 0.8011,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "style for-the-badge",
+          "--",
+          "style",
+          "for-the-badge",
+          "options",
+          "-- manpage",
+          "excluded section"
+        ],
+        "gem_score": 0.8382
+      },
+      {
+        "name": "ollama/ollama",
+        "url": "https://github.com/ollama/ollama",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.8562,
+        "relevance": 0.7935,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "ollama",
+          "ollama run",
+          "run",
+          "https",
+          "###",
+          "model",
+          "shell ollama",
+          "shell"
+        ],
+        "gem_score": 0.7155
+      },
+      {
+        "name": "Genesis-Embodied-AI/Genesis",
+        "url": "https://github.com/Genesis-Embodied-AI/Genesis",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.6429,
+        "relevance": 0.7955,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "genesis",
+          "-",
+          "docker",
+          ".",
+          "physics",
+          "install",
+          ". -"
+        ],
+        "gem_score": 0.7041
+      },
+      {
+        "name": "freeCodeCamp/freeCodeCamp",
+        "url": "https://github.com/freeCodeCamp/freeCodeCamp",
+        "license": "BSD-3-Clause",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.9769,
+        "relevance": 0.7775,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "- learn",
+          "-",
+          "learn",
+          "building",
+          "learn css",
+          "css",
+          "certifications"
+        ],
+        "gem_score": 0.6884
+      },
+      {
+        "name": "axios/axios",
+        "url": "https://github.com/axios/axios",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.7112,
+        "relevance": 0.7605,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "#x3d",
+          "amp",
+          "align center",
+          "https",
+          "href https",
+          "utm_source #x3d",
+          "amp utm_medium",
+          "utm_medium #x3d"
+        ],
+        "gem_score": 0.6599
+      },
+      {
+        "name": "Lightning-AI/pytorch-lightning",
+        "url": "https://github.com/Lightning-AI/pytorch-lightning",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.4408,
+        "relevance": 0.7998,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "lightning",
+          "ptl_readme",
+          "#",
+          "pytorch",
+          "utm_source ptl_readme",
+          "ptl_readme utm_medium",
+          "utm_medium referral"
+        ],
+        "gem_score": 0.6333
+      },
+      {
+        "name": "facebook/react",
+        "url": "https://github.com/facebook/react",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.59,
+        "relevance": 0.7868,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "react",
+          "can",
+          ".",
+          "https //react.dev/learn",
+          "get",
+          "contributing",
+          "https //react.dev/"
+        ],
+        "gem_score": 0.6192
+      },
+      {
+        "name": "harness/harness",
+        "url": "https://github.com/harness/harness",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.5095,
+        "relevance": 0.8015,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "harness",
+          "install",
+          "https",
+          "run",
+          "open source",
+          "http //localhost",
+          "##",
+          "can"
+        ],
+        "gem_score": 0.5929
+      },
+      {
+        "name": "mifi/lossless-cut",
+        "url": "https://github.com/mifi/lossless-cut",
+        "license": "GPL-2.0",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.4666,
+        "relevance": 0.808,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "video",
+          "file",
+          "https",
+          "audio",
+          "cut",
+          "tracks",
+          "br"
+        ],
+        "gem_score": 0.5824
+      },
+      {
+        "name": "espnet/espnet",
+        "url": "https://github.com/espnet/espnet",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.4502,
+        "relevance": 0.7994,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "query branch",
+          "branch 3amaster",
+          "- support",
+          "ci",
+          "query",
+          "branch"
+        ],
+        "gem_score": 0.5742
+      },
+      {
+        "name": "pandas-dev/pandas",
+        "url": "https://github.com/pandas-dev/pandas",
+        "license": "BSD-3-Clause",
+        "role": "module (Python)",
+        "novelty_score": 0.461,
+        "relevance": 0.7745,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "data",
+          "pandas",
+          "data sets",
+          "pypi",
+          "conda",
+          "##"
+        ],
+        "gem_score": 0.5715
+      },
+      {
+        "name": "zhayujie/chatgpt-on-wechat",
+        "url": "https://github.com/zhayujie/chatgpt-on-wechat",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.4369,
+        "relevance": 0.7809,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "#",
+          "src https",
+          "-",
+          "+",
+          "bot",
+          "img",
+          "src"
+        ],
+        "gem_score": 0.5679
+      },
+      {
+        "name": "trekhleb/javascript-algorithms",
+        "url": "https://github.com/trekhleb/javascript-algorithms",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.6033,
+        "relevance": 0.7805,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "b",
+          "data",
+          "https",
+          "algorithm",
+          "data structure",
+          "tree",
+          "search"
+        ],
+        "gem_score": 0.5609
+      },
+      {
+        "name": "huginn/huginn",
+        "url": "https://github.com/huginn/huginn",
+        "license": "MIT",
+        "role": "module (Ruby)",
+        "novelty_score": 0.488,
+        "relevance": 0.8195,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "huginn",
+          ".",
+          "agents",
+          "bundle exec",
+          "when",
+          "send",
+          "run"
+        ],
+        "gem_score": 0.5303
+      }
+    ],
+    "architecture_ascii": "[1] yt-dlp/yt-dlp  →  [2] ollama/ollama  →  [3] Genesis-Embodied-AI/Genesis  →  [4] freeCodeCamp/freeCodeCamp  →  [5] axios/axios  →  [6] Lightning-AI/pytorch-lightning  →  [7] facebook/react  →  [8] harness/harness  →  [9] mifi/lossless-cut  →  [10] espnet/espnet  →  [11] pandas-dev/pandas  →  [12] zhayujie/chatgpt-on-wechat  →  [13] trekhleb/javascript-algorithms  →  [14] huginn/huginn\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "drone",
+        "frequency",
+        "data",
+        "LSTM"
+      ],
+      "days": 35,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 29,
+      "probed": 20,
+      "selected": 14,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

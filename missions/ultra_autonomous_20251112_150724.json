@@ -1,0 +1,858 @@
+{
+  "timestamp": "2025-11-12T15:07:24.056433",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Design PTCP (PenTest Control Protocol), a secure, auditable, HTTP/3-over-QUIC control-plane protocol for orchestrating lawful penetration testing across heterogeneous modules (DNS recon, subdomain mutations, HTTP/3 probing, mobile ADB device checks, and IoT surface validation). PTCP introduces a scope-first handshake, signed execution receipts, transport-level rate/volume guards, and continuous observability. Built using ngtcp2/nghttp3 (transport), Pode and ServiceTalk (endpoint agents), Node.js+newrelic (orchestrator telemetry), projectdiscovery/alterx and landscape (recon), and adbutils (mobile). Success = zero out-of-scope emissions; verifiable signed transcripts; p95 command-to-probe latency <200ms at 1k concurrent probes; horizontal scaling to 100k events/min with <1% dropped telemetry. Why it matters: PTCP makes penetration activity enterprise-safe, provable, and reproducible without teaching or enabling exploitation.",
+  "repository_synergy": "THE INSIGHT: Penetration work breaks at the seams—governance, scope, and auditability fail long before packet-level cleverness. The non-obvious move is to innovate at the control plane, not the exploit layer. By binding scope, attestation, and observability directly into the transport (HTTP/3/QUIC), we transform disparate recon tools into a compliant distributed system. These repos provide the exact building blocks, if we repurpose them.\n\nTHE STORY: ngtcp2/nghttp3 gives us production-grade HTTP/3 on QUIC—multiplexed, encrypted, and congestion-aware—ideal for stream-oriented probe orchestration with precise backpressure and mTLS. Apple’s ServiceTalk contributes a high-performance, reactive networking substrate that plays perfectly with HTTP/3 patterns (streamed command-response, retry-aware, off-heap buffers). Badgerati/Pode puts a first-class PowerShell server in our hands to reach Windows-heavy internal networks where red teams actually operate; it becomes our Windows-native PTCP Agent. newrelic/node-newrelic instruments the orchestrator deeply, letting us prove rate limits and scope compliance in real time. projectdiscovery/alterx and ThisSeanZhang/landscape are recon engines—subdomain mutation and DNS mapping—that become declarative capabilities under PTCP verbs, not free-floating binaries. openatx/adbutils extends the reach to mobile devices, but in PTCP it’s fenced and non-destructive (inventory, surface checks) with receipts. modelcontextprotocol/use-mcp inspires a vendor-neutral “tool capability” descriptor, decoupling clients from engine details without importing AI. reactiveui/splat provides a unified logging abstraction for .NET clients and windows-side agents. geerlingguy/ansible-role-security hardens PTCP infrastructure so the control plane is defensible by default.\n\nTHE SYNERGY: These pieces snap together into a protocol-first system: QUIC streams carry signed commands and scope tokens; Pode and ServiceTalk host PTCP Agents at the edge; Node.js orchestrator streams tasks, with New Relic tracing every hop; landscape and alterx become plug-in capabilities invoked via standardized verbs; adbutils is a strict-scope adapter to test device posture; Splat unifies local client logs; Ansible role locks down hosts. The result is a cohesive, observable, and self-limiting operation fabric.\n\nTHE INNOVATION: By embedding scoping, rate limiting, and attestation at the protocol level, we prevent accidental overreach and make audits replayable from signed transcripts. We also leverage HTTP/3’s multiplexing to run many small, safe probes without costly socket churn. PTCP’s capability model—borrowing the simplicity of MCP’s tool declarations—turns ad-hoc recon into a governed, composable pipeline. Now an enterprise can run large-scale, lawful testing with the confidence of “provable restraint.”\n\nTHE BRIDGE: We define an ALPN id (e.g., ptcp/1) atop ngtcp2/nghttp3; build a Node.js orchestrator instrumented by node-newrelic; deploy Pode-based Windows agents and ServiceTalk-based JVM agents; wrap alterx (Go) and landscape (Rust) behind micro-capabilities; expose adbutils (Python) via a mobile adapter; advertise capabilities with an MCP-like manifest; unify Windows UI/agent logging via Splat; harden all nodes using the Ansible security role. This cross-language, cross-platform mesh becomes a single, signed, scope-safe control plane.",
+  "technical_architecture": "Protocol overview\n- Transport: HTTP/3 over QUIC using ngtcp2/nghttp3, ALPN: ptcp/1. Disable 0-RTT to prevent replay. Enforce mTLS for orchestrator↔agent trust and certificate pinning.\n- Message encoding: application/cbor for compactness; headers carry minimal metadata (QPACK-friendly); body includes signed envelopes.\n- Security envelope: Ed25519 signatures on command envelopes with rotating short-lived keys. Scope token as a CBOR Web Token (CWT) that encodes: allowed FQDN prefixes/IP CIDRs, methods, concurrency caps, byte budgets, time window, and per-target cooldown. Agents must verify scope and refuse out-of-policy commands.\n- Observability: Orchestrator instrumented by newrelic/node-newrelic. Each command carries a trace id; agents emit span events back over a telemetry stream. Audit records are merklized (rolling Merkle tree), with root hashes anchored per engagement.\n\nCore components\n- Orchestrator (Node.js):\n  - QUIC client/server endpoints for agent fanout.\n  - Capability registry (MCP-style): JSON manifests list verbs, JSON/CBOR schemas, and resource costs.\n  - Policy engine: compiles engagement scope into per-command guardrails. Schedules tasks and enforces rate/volume budgets.\n  - Telemetry bus: streams spans and receipts to New Relic and durable storage (object store) with Merkle roots.\n- Windows Agent (PowerShell via Pode):\n  - Hosts PTCP /capabilities and /execute endpoints.\n  - Executes Windows-centric tasks (e.g., internal DNS queries, HTTP/3 probes via a bundled nghttp3 client binary, safe fileless checks) within a constrained sandbox.\n  - Uses reactiveui/splat for consistent logging on Windows; emits PTCP spans.\n- JVM Agent (Java, ServiceTalk):\n  - High-throughput PTCP gateway, ideal for data center segments.\n  - Hosts adapters for HTTP/3 probing and streaming responses with backpressure.\n- DNS Recon Service (Rust, landscape):\n  - Exposed as a PTCP capability DISCOVER.DNS.MAP to enumerate authoritative records, SVCB/HTTPS records, and AAAA/A sets. Enforces query rate limits from scope.\n- Subdomain Mutation Service (Go, alterx):\n  - PTCP capability DISCOVER.SUBDOMAIN.MUTATE. Generates candidate labels under provided zone roots; deduplication and on-the-fly DNS confirmation delegated to the DNS service.\n- Mobile Adapter (Python, adbutils):\n  - PTCP capability MOBILE.ADB.INVENTORY and MOBILE.ADB.SURFACE_CHECK (non-destructive). Only operates on devices pre-registered in scope tokens.\n\nProtocol verbs (examples)\n- CONTROL.NEGOTIATE: Exchange scope token, agent attestation, capability manifests. Orchestrator issues nonce; agent signs and returns supported verbs with quota hints.\n- DISCOVER.DNS.MAP: Input: root domain(s). Guardrails: query rate, recursion depth. Output: signed list of records, timings, and DNSSEC flags if present.\n- DISCOVER.SUBDOMAIN.MUTATE: Input: root(s), patterns. Output: candidates and resolution success (no content fetch without explicit PROBE).* \n- PROBE.HTTP3.HEAD/GET: Input: host, SNI, path. Guardrails: max bytes, header allowlist, concurrency.\n- MOBILE.ADB.INVENTORY: Input: device id (from allowlist). Output: SDK level, package list hashes (not contents), network state. No app launches.\n\nExecution receipts\n- Each command returns a signed receipt with: input hash, scope token id, agent id, monotonic time, observed rates, emitted bytes, and a proof (Merkle leaf) linking to the engagement log. This enables third-party audit without disclosing payloads.\n\nData flow\n1) Client requests an engagement; orchestrator compiles a scope token and safety budgets.\n2) Orchestrator negotiates with agents over PTCP/HTTP3, validating attestation and capabilities.\n3) Tasks are streamed over independent QUIC streams; DNS and mutation services produce candidates; HTTP/3 probe service confirms reachability and headers only (content-length capped by scope).\n4) Mobile adapter performs inventory checks on scoped devices.\n5) All spans flow back; merkle roots are anchored periodically; New Relic dashboards show budget consumption and any near-violations.\n\nKey challenges and solutions\n- Heterogeneous runtimes: Use MCP-style manifests to normalize capability contracts and CBOR schemas; keep adapters language-native.\n- Scope enforcement at the edge: Agents verify CWT scope locally; even if orchestrator is compromised, agents refuse out-of-policy traffic.\n- QUIC performance vs. safety: Disable 0-RTT; use stream-level flow control to enforce byte budgets; close offending streams with explicit PTCP error codes.\n- Cross-platform logging: Splat on Windows agents; New Relic on orchestrator; all logs canonicalized into PTCP span schema.\n\nPerformance notes\n- HTTP/3 multiplexing avoids socket churn; small CBOR envelopes keep bandwidth low.\n- ServiceTalk’s reactive model ensures backpressure across JVM agents.\n- Pode’s lightweight server suits on-prem Windows segments with minimal install friction.\n- DNS batching in landscape reduces resolver overhead; alterx candidate generation is rate-governed at source.\n\nHygiene and hardening\n- Apply geerlingguy/ansible-role-security to orchestrator and Linux agents (SSH config, firewall, fail2ban, secure sysctls). Certificates rotated automatically.\n- Artifact pinning and checksums for nghttp3, alterx, landscape binaries where used.\n\nNote: We explicitly avoid exploit delivery or intrusive actions. PTCP is a governance-first protocol for safe, consented assessments and monitoring of public surfaces.",
+  "expected_impact": "Use cases\n1) Enterprise-wide scoped subdomain discovery: Security team issues a PTCP engagement with allowlisted zones. alterx generates candidates, landscape resolves them under strict rate limits, and HTTP/3 probes confirm headers only. Every action is signed and traceable.\n2) HTTP/3 WAF posture validation: JVM agent streams PROBE.HTTP3.HEAD to thousands of endpoints, verifying SNI handling, TLS versions, and response headers without body fetch. New Relic dashboards confirm that byte and concurrency caps held.\n3) Mobile app surface inventory: In a device lab, MOBILE.ADB.INVENTORY and SURFACE_CHECK enumerate SDK levels, package existence, and debug flags on allowed devices—no app interaction. Results are signed and replayable for audits.\n4) Internal Windows segment recon: A Pode-based agent performs internal DNS mapping within predefined CIDRs. The scope token prevents accidental cross-boundary queries. Receipts prove compliance to IT governance.\n5) Third-party testing portal: Vendors receive time-boxed, budgeted scope tokens. Their PTCP client can run discovery without overreach; receipts serve as evidence for procurement and legal.\n6) IoT external surface verification: An agent runs basic reachability and header checks on known IoT endpoints (e.g., checking the presence of authentication on admin panels), never attempting authentication bypass. Findings are minimal but high-signal.\n\nScalability and extensibility\n- Scale horizontally by adding agents; QUIC streams naturally multiplex. New capabilities are onboarded via MCP-style manifests without client changes.\n\nLimitations and mitigations\n- Not designed for exploit execution: This is a constraint by design; pair with traditional pen-test tools outside PTCP when explicitly authorized.\n- Cross-language operational overhead: Mitigated via capability manifests and standardized receipts.\n- QUIC visibility for legacy monitoring is limited: Address with orchestrator-side telemetry and periodic receipt anchoring.\n- Dependency on DNS health: Build resolvers with retries and backoff; cache negative results for short TTLs to avoid flapping.",
+  "innovation_analysis": "Innovation score: 8.5/10. It reframes penetration work around a transport-level, scope-safe control plane, leveraging HTTP/3/QUIC and signed receipts—rarely done in current tooling.\n\nNext steps\n- Implement minimal PTCP over nghttp3: CONTROL.NEGOTIATE + PROBE.HTTP3.HEAD.\n- Build Node.js orchestrator with newrelic instrumentation and receipt Merkle anchoring.\n- Stand up two agents: Pode (Windows) and ServiceTalk (JVM) with capability manifests.\n- Wrap landscape and alterx as capabilities; add DNS rate guards.\n- Add adbutils adapter with inventory-only commands.\n\nKey metrics\n- Zero out-of-scope attempts (enforced by agents).\n- p95 command→receipt latency; stream error rates; bytes-per-scope budget adherence.\n- Receipt verification success and Merkle root anchoring intervals.\n\nEssential tools/frameworks\n- ngtcp2/nghttp3, Node.js + node-newrelic, Pode (PowerShell), ServiceTalk (Java), landscape (Rust), alterx (Go), adbutils (Python), geerlingguy/ansible-role-security, reactiveui/splat for Windows-side logging.",
+  "sources": [
+    {
+      "name": "confident-ai/deepteam",
+      "url": "https://github.com/confident-ai/deepteam",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<p align=\"center\">\n    <img src=\"https://github.com/confident-ai/deepteam/blob/main/assets/demo.gif\" alt=\"DeepEval Logo\" width=\"100%\">\n</p>\n\n<p align=\"center\">\n    <h1 align=\"center\">The LLM Red Teaming Framework</h1>\n</p>\n\n<h4 align=\"center\">\n    <p>\n        <a href=\"https://www.trydeepteam.com?utm_source=GitHub\">Documentation</a> |\n        <a href=\"#-vulnerabilities--attacks--and-features-\">Vulnerabilities, Attacks, and Guardrails</a> |\n        <a href=\"#-quickstart\">Getting Started</a> \n    <p>\n</h4>\n\n<p align=\"center\">\n    <a href=\"https://github.com/confident-ai/deepteam/releases\">\n        <img alt=\"GitHub release\" src=\"https://img.shields.io/github/v/release/confident-ai/deepteam\">\n    </a>\n    <a href=\"https://github.com/confident-ai/deepteam/blob/master/LICENSE.md\">\n        <img alt=\"License\" src=\"https://img.shields.io/github/license/confident-ai/deepeval.svg?color=yellow\">\n    </a>\n</p>\n\n<p align=\"center\">\n    <!-- Keep these links. Translations will automatically update with the README. -->\n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=de\">Deutsch</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=es\">Español</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=fr\">français</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=ja\">日本語</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=ko\">한국어</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=pt\">Português</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=ru\">Русский</a> | \n    <a href=\"https://www.readme-i18n.com/confident-ai/deepeval?lang=zh\">中文</a>\n</p>\n\n**DeepTeam** is a simple-to-use, open-source LLM red teaming framework, for penetration testing and safe guarding large-language model systems.\n\nDeepTeam incorporates the latest research to simulate adversarial attacks using SOTA techniques such as jailbreaking and prompt injections, to catch ",
+      "scores": {
+        "novelty": 0.4233,
+        "health": 1.0,
+        "relevance": 0.8163,
+        "author_rep": 0.0,
+        "gem_score": 0.7522
+      },
+      "concepts": [
+        "-",
+        "deepteam",
+        "https",
+        "href https",
+        "llm",
+        "/a href",
+        "red teaming",
+        "red"
+      ]
+    },
+    {
+      "name": "pymc-labs/pymc-marketing",
+      "url": "https://github.com/pymc-labs/pymc-marketing",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"center\">\n\n![PyMC-Marketing Logo](docs/source/_static/marketing-logo-light.jpg)\n\n</div>\n\n----\n\n![Test](https://github.com/pymc-labs/pymc-marketing/actions/workflows/test.yml/badge.svg)\n![Test Notebook](https://github.com/pymc-labs/pymc-marketing/actions/workflows/test_notebook.yml/badge.svg)\n[![codecov](https://codecov.io/gh/pymc-labs/pymc-marketing/branch/main/graph/badge.svg?token=OBV3BS5TYE)](https://codecov.io/gh/pymc-labs/pymc-marketing)\n[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)\n[![docs](https://readthedocs.org/projects/pymc-marketing/badge/?version=latest)](https://docs.readthedocs.io/en/latest/)\n\n[![PyPI Version](https://img.shields.io/pypi/v/pymc-marketing.svg)](https://pypi.python.org/pypi/pymc-marketing)\n[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n\n[![Downloads](https://static.pepy.tech/badge/pymc-marketing)](https://pepy.tech/project/pymc-marketing)\n[![Downloads](https://static.pepy.tech/badge/pymc-marketing/month)](https://pepy.tech/project/pymc-marketing)\n[![Downloads](https://static.pepy.tech/badge/pymc-marketing/week)](https://pepy.tech/project/pymc-marketing)\n\n# <span style=\"color:limegreen\">PyMC-Marketing</span>: Bayesian Marketing Mix Modeling (MMM) & Customer Lifetime Value (CLV)\n\n## Marketing Analytics Tools from [PyMC Labs](https://www.pymc-labs.com)\n\nUnlock the power of **Marketing Mix Modeling (MMM)**, **Customer Lifetime Value (CLV)** and **Customer Choice Analysis (CSA)** analytics with PyMC-Marketing. This open-source marketing analytics tool empowers businesses to make smarter, data-driven decisions for maximizing ROI in marketing campaigns.\n\n----\n\nThis repository is supported by [PyMC Labs](https://www.pymc-labs.com).\n\n<center>\n    <img src=\"docs/source/_static/labs-logo-light.png\" width=\"50%\" />\n</center>\n\nFor businesses looking to integrate Py",
+      "scores": {
+        "novelty": 0.3894,
+        "health": 1.0,
+        "relevance": 0.7658,
+        "author_rep": 0.0,
+        "gem_score": 0.6091
+      },
+      "concepts": [
+        "https",
+        ".",
+        "marketing",
+        "marketing mix",
+        "pymc-marketing",
+        "bayesian",
+        "pymc",
+        "notebook https"
+      ]
+    },
+    {
+      "name": "openatx/adbutils",
+      "url": "https://github.com/openatx/adbutils",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# adbutils\n[![PyPI](https://img.shields.io/pypi/v/adbutils.svg?color=blue)](https://pypi.org/project/adbutils/#history)\n[![codecov](https://codecov.io/gh/openatx/adbutils/graph/badge.svg?token=OuGOMZUkmi)](https://codecov.io/gh/openatx/adbutils)\n\nPython adb library for adb service\n\n# Requires\nPython 3.8+\n\n**Table of Contents**\n\n<!--ts-->\n   * [adbutils](#adbutils)\n   * [Install](#install)\n   * [Usage](#usage)\n      * [Connect ADB Server](#connect-adb-server)\n      * [List all the devices and get device object](#list-all-the-devices-and-get-device-object)\n      * [Connect remote device](#connect-remote-device)\n      * [adb forward and adb reverse](#adb-forward-and-adb-reverse)\n      * [Create socket connection to the device](#create-socket-connection-to-the-device)\n      * [Run shell command](#run-shell-command)\n      * [Transfer files](#transfer-files)\n      * [Extended Functions](#extended-functions)\n      * [Run in command line 命令行使用](#run-in-command-line-命令行使用)\n         * [Environment variables](#environment-variables)\n         * [Color Logcat](#color-logcat)\n      * [Experiment](#experiment)\n      * [Examples](#examples)\n   * [Develop](#develop)\n      * [Watch adb socket data](#watch-adb-socket-data)\n   * [Thanks](#thanks)\n   * [Ref](#ref)\n   * [LICENSE](#license)\n\n<!-- Added by: shengxiang, at: 2021年 3月26日 星期五 15时05分04秒 CST -->\n\n<!--te-->\n\n# Install\n```\npip3 install adbutils\n\n# or\npip3 install adbutils[all]\n```\n\n# Usage\nExample\n\n## Connect ADB Server\n```python\nimport adbutils\n\nadb = adbutils.AdbClient(host=\"127.0.0.1\", port=5037)\nfor info in adb.list(extended=True):\n    print(info.serial, info.state)\n    # <serial> <device|offline>\n    print(info.transport_id)\n\n# only list state=device\nprint(adb.device_list())\n\n# Set socket timeout to 10 (default None)\nadb = adbutils.AdbClient(host=\"127.0.0.1\", port=5037, socket_timeout=10)\nprint(adb.device_list())\n```\n\nThe above code can be short to `from adbutils import adb`\n\n## List all the devices and get device object\n```p",
+      "scores": {
+        "novelty": 0.3565,
+        "health": 0.75,
+        "relevance": 0.7997,
+        "author_rep": 0.0,
+        "gem_score": 0.5415
+      },
+      "concepts": [
+        "#",
+        "adb",
+        "device",
+        "print",
+        "tcp",
+        "python",
+        "output",
+        "tcp #"
+      ]
+    },
+    {
+      "name": "newrelic/node-newrelic",
+      "url": "https://github.com/newrelic/node-newrelic",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<a href=\"https://opensource.newrelic.com/oss-category/#community-plus\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://github.com/newrelic/opensource-website/raw/main/src/images/categories/dark/Community_Plus.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Community_Plus.png\"><img alt=\"New Relic Open Source community plus project banner.\" src=\"https://github.com/newrelic/opensource-website/raw/main/src/images/categories/Community_Plus.png\"></picture></a>\n\n# New Relic's Node.js agent\n[![npm status badge][1]][2] [![Server Smoke Tests][3]][4] [![Node Agent CI][5]][6] [![codecov][7]][8]\n\nThis package instruments your application for performance monitoring with [New Relic](https://newrelic.com).\n\nIn order to take full advantage of this package, make sure you have a [New Relic account](https://newrelic.com) before starting. \n\nAs with any instrumentation tool, please test before using in production.\n\n## Installation\n\nTo use New Relic's Node.js agent entails these three steps, which are described in detail below:\n\n- Install [the `newrelic` package](https://www.npmjs.com/package/newrelic)\n- Create a base configuration file\n- Load the agent in your program\n\n1. To install the agent for performance monitoring, use your favorite npm-based package manager and install the `newrelic` package into your application:\n\n    ```sh\n    $ npm install newrelic\n    ```\n\n2. Then, copy the stock configuration file to your program's base folder:\n\n    ```sh\n    $ cp ./node_modules/newrelic/newrelic.js ./<your destination>\n    ```\n\n3. Now, add your New Relic license key and application/service name to that file:\n\n    ```js\n    /* File: newrelic.js */\n    'use strict'\n    /**\n     * New Relic agent configuration.\n     *\n     * See lib/config/default.js in the agent distribution for a more complete\n     * description of configuration variables and their potential values.\n     */\n    export",
+      "scores": {
+        "novelty": 0.2907,
+        "health": 0.75,
+        "relevance": 0.8165,
+        "author_rep": 0.0,
+        "gem_score": 0.5204
+      },
+      "concepts": [
+        "https",
+        "newrelic",
+        "agent",
+        "instrumentation",
+        "relic",
+        "node.js",
+        "node.js agent",
+        "/"
+      ]
+    },
+    {
+      "name": "Badgerati/Pode",
+      "url": "https://github.com/Badgerati/Pode",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n    <img src=\"https://github.com/Badgerati/Pode/raw/develop/images/icon-new.svg?raw=true\" width=\"250\" />\n</p>\n\n[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/Badgerati/Pode/master/LICENSE.txt)\n[![Documentation](https://img.shields.io/github/v/release/badgerati/pode?label=docs&logo=readthedocs&logoColor=white)](https://badgerati.github.io/Pode)\n[![GitHub Actions](https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fbadgerati%2Fpode%2Fbadge&style=flat&label=GitHub)](https://actions-badge.atrox.dev/badgerati/pode/goto)\n[![Code Coverage](https://coveralls.io/repos/github/Badgerati/Pode/badge.svg?branch=develop)](https://coveralls.io/github/Badgerati/Pode?branch=develop)\n[![Discord](https://img.shields.io/discord/887398607727255642?logo=discord&logoColor=white)](https://discord.gg/fRqeGcbF6h)\n\n[![Chocolatey](https://img.shields.io/chocolatey/dt/pode.svg?label=Chocolatey&colorB=a1301c&logo=chocolatey&logoColor=white)](https://chocolatey.org/packages/pode)\n[![PowerShell](https://img.shields.io/powershellgallery/dt/pode.svg?label=PowerShell&colorB=085298&logo=powershell&logoColor=white)](https://www.powershellgallery.com/packages/Pode)\n[![Docker](https://img.shields.io/docker/pulls/badgerati/pode.svg?label=Docker&logoColor=white&logo=docker)](https://hub.docker.com/r/badgerati/pode/)\n\n[![GitHub Sponsors](https://img.shields.io/github/sponsors/Badgerati?color=%23ff69b4&logo=github&style=flat&label=Sponsers)](https://github.com/sponsors/Badgerati)\n[![Ko-fi](https://img.shields.io/static/v1?logo=kofi&label=Ko-fi&logoColor=white&message=Buy+me+a+coffee&color=ff5f5f)](https://ko-fi.com/badgerati)\n[![PayPal](https://img.shields.io/static/v1?logo=paypal&label=PayPal&logoColor=white&message=Donate&color=00457C)](https://paypal.me/badgerati)\n\n> 💝 A lot of my free time, evenings, and weekends goes into making Pode happen; please do consider sponsoring as it will really help! 😊\n\n- [📘 ",
+      "scores": {
+        "novelty": 0.0935,
+        "health": 1.0,
+        "relevance": 0.8018,
+        "author_rep": 0.0,
+        "gem_score": 0.51
+      },
+      "concepts": [
+        "https",
+        "support",
+        "powershell",
+        "pode",
+        "logocolor white",
+        "documentation",
+        "label",
+        "logo"
+      ]
+    },
+    {
+      "name": "ngtcp2/nghttp3",
+      "url": "https://github.com/ngtcp2/nghttp3",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "nghttp3\n=======\n\nnghttp3 is an implementation of `RFC 9114\n<https://datatracker.ietf.org/doc/html/rfc9114>`_ HTTP/3 mapping over\nQUIC and `RFC 9204 <https://datatracker.ietf.org/doc/html/rfc9204>`_\nQPACK in C.\n\nIt does not depend on any particular QUIC transport implementation.\n\nDocumentation\n-------------\n\n`Online documentation <https://nghttp2.org/nghttp3/>`_ is available.\n\nBuild from git\n---------------\n\n.. code-block:: shell\n\n   $ git clone https://github.com/ngtcp2/nghttp3\n   $ cd nghttp3\n   $ git submodule update --init\n   $ autoreconf -i\n   $ ./configure\n   $ make -j$(nproc) check\n\nHTTP/3\n------\n\nThis library implements `RFC 9114\n<https://datatracker.ietf.org/doc/html/rfc9114>`_ HTTP/3.  It does not\nsupport server push.\n\nThe following extensions have been implemented:\n\n- `Extensible Prioritization Scheme for HTTP\n  <https://datatracker.ietf.org/doc/html/rfc9218>`_\n- `Bootstrapping WebSockets with HTTP/3\n  <https://datatracker.ietf.org/doc/html/rfc9220>`_\n- `The ORIGIN Extension in HTTP/3\n  <https://datatracker.ietf.org/doc/html/rfc9412>`_\n\nIt can also send and receive `SETTINGS_H3_DATAGRAM` from `HTTP\nDatagrams and the Capsule Protocol\n<https://datatracker.ietf.org/doc/html/rfc9297>`_.\n\nQPACK\n-----\n\nThis library implements `RFC 9204\n<https://datatracker.ietf.org/doc/html/rfc9204>`_ QPACK.  It supports\ndynamic table.\n\nOptimizations\n-------------\n\nThis library optionally uses AVX2, if available, to optimize its\nperformance.  To compile with AVX2, add ``-mavx2`` to CFLAGS.  Note\nthat by default, CFLAGS is set to ``-g -O2``.  When specifying CFLAGS,\ninclude them as well (e.g., ``-g -O2 -mavx2``).\n\nExamples\n--------\n\n- client: https://github.com/ngtcp2/ngtcp2/blob/main/examples/client.cc\n- server: https://github.com/ngtcp2/ngtcp2/blob/main/examples/server.cc\n- curl: https://github.com/curl/curl/blob/master/lib/vquic/curl_ngtcp2.c\n\nLicense\n-------\n\nThe MIT License\n\nCopyright (c) 2019 nghttp3 contributors\n",
+      "scores": {
+        "novelty": 0.2473,
+        "health": 0.75,
+        "relevance": 0.819,
+        "author_rep": 0.0,
+        "gem_score": 0.5089
+      },
+      "concepts": [
+        "https",
+        "_",
+        "rfc https",
+        "-",
+        "nghttp3",
+        "rfc",
+        "http/3",
+        "https //datatracker.ietf.org/doc/html/rf"
+      ]
+    },
+    {
+      "name": "ThisSeanZhang/landscape",
+      "url": "https://github.com/ThisSeanZhang/landscape",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# Landscape - Linux Router Configuration Tool\n\n[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)\n[![DeepWiki](https://img.shields.io/badge/DeepWiki-ThisSeanZhang%2Flandscape-blue.svg?logo=data\\:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==)](https://deepwiki.com/ThisSeanZhang/landscape)\n\n<!-- DeepWiki badge generated by https://deepwiki.ryoppippi.com/ -->\n\nLandscape is a web-based tool that helps you easily configure your favorite Linux distribution as a router.\n\n> Built with Rust / eBPF / AF_PACKET.\n\n[简体中文](./README.zh.md) | [English](./README.md)\n\n---\n\n\n## Screenshot\n![](docs/images/1.png)\n\n---\n\n## CORE Features\n* Traffic diversion control (SIP-CIDR, MAC, DIP, domain, Geo matching rules)  \n* eBPF routing\n* Independent DNS configu",
+      "scores": {
+        "novelty": 0.2446,
+        "health": 0.75,
+        "relevance": 0.8202,
+        "author_rep": 0.0,
+        "gem_score": 0.5069
+      },
+      "concepts": [
+        "https",
+        "dns",
+        "u",
+        "/u",
+        "--- ##",
+        "/",
+        "ip",
+        "---"
+      ]
+    },
+    {
+      "name": "projectdiscovery/alterx",
+      "url": "https://github.com/projectdiscovery/alterx",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<h1 align=\"center\">\n AlterX\n<br>\n</h1>\n\n\n<p align=\"center\">\n<a href=\"https://opensource.org/licenses/MIT\"><img src=\"https://img.shields.io/badge/license-MIT-_red.svg\"></a>\n<a href=\"https://goreportcard.com/badge/github.com/projectdiscovery/alterx\"><img src=\"https://goreportcard.com/badge/github.com/projectdiscovery/alterx\"></a>\n<a href=\"https://pkg.go.dev/github.com/projectdiscovery/alterx/pkg/alterx\"><img src=\"https://img.shields.io/badge/go-reference-blue\"></a>\n<a href=\"https://github.com/projectdiscovery/alterx/releases\"><img src=\"https://img.shields.io/github/release/projectdiscovery/alterx\"></a>\n<a href=\"https://twitter.com/pdiscoveryio\"><img src=\"https://img.shields.io/twitter/follow/pdiscoveryio.svg?logo=twitter\"></a>\n<a href=\"https://discord.gg/projectdiscovery\"><img src=\"https://img.shields.io/discord/695645237418131507.svg?logo=discord\"></a>\n</p>\n\n<p align=\"center\">\n  <a href=\"#features\">Features</a> •\n  <a href=\"#installation\">Installation</a> •\n  <a href=\"#help-menu\">Usage</a> •\n  <a href=\"#examples\">Running AlterX</a> •\n  <a href=\"https://discord.gg/projectdiscovery\">Join Discord</a>\n\n</p>\n\n<pre align=\"center\">\n<b>\n   Fast and customizable subdomain wordlist generator using DSL.\n</b>\n</pre>\n\n![image](https://user-images.githubusercontent.com/8293321/229380735-140d3f25-d0cb-461d-8c49-4c1eff43d1f4.png)\n\n## Features\n- Fast and Customizable\n- **Automatic word enrichment**\n- Pre-defined variables\n- **Configurable Patterns**\n- **Pattern Mining** - Automatically discover subdomain patterns (Go port of [Regulator](https://github.com/cramppet/regulator))\n- STDIN / List input\n- Multiple operation modes (default, discover, both)\n\n## Installation\nTo install alterx, you need to have Golang 1.19 installed on your system. You can download Golang from [here](https://go.dev/doc/install). After installing Golang, you can use the following command to install alterx:\n\n\n```bash\ngo install github.com/projectdiscovery/alterx/cmd/alterx@latest\n```\n\n### Building from Source\n```",
+      "scores": {
+        "novelty": 0.1915,
+        "health": 0.75,
+        "relevance": 0.785,
+        "author_rep": 0.0,
+        "gem_score": 0.4804
+      },
+      "concepts": [
+        "https",
+        "alterx",
+        "-",
+        "subdomain",
+        "/a href",
+        "patterns",
+        ".",
+        "href"
+      ]
+    },
+    {
+      "name": "database64128/youtube-dl-wpf",
+      "url": "https://github.com/database64128/youtube-dl-wpf",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# 🎞⬇ Cube YouTube Downloader - `youtube-dl-wpf`\n\n[![Build](https://github.com/database64128/youtube-dl-wpf/actions/workflows/build.yml/badge.svg)](https://github.com/database64128/youtube-dl-wpf/actions/workflows/build.yml)\n[![Release](https://github.com/database64128/youtube-dl-wpf/actions/workflows/release.yml/badge.svg)](https://github.com/database64128/youtube-dl-wpf/actions/workflows/release.yml)\n\nWPF GUI for [youtube-dl](https://github.com/ytdl-org/youtube-dl) and [yt-dlp](https://github.com/yt-dlp/yt-dlp).\n\n![Home](home.webp \"Home\")\n![Settings](settings.webp \"Settings\")\n\n## Features\n\n- Follow 🎨 system color mode, or choose between 🌃 dark mode and 🔆 light mode.\n- Update youtube-dl/yt-dlp on startup.\n- List all available formats.\n- Override video, audio formats and output container.\n- Embed metadata into downloaded file.\n- Download and embed thumbnails.\n- Download whole playlists.\n- Select items from playlist to download.\n- Select types of subtitles (default, all languages, auto-generated) to download and embed.\n- Specify custom output template.\n- Specify custom download path.\n- Specify custom FFmpeg path.\n- Specify custom proxy.\n- Specify custom command-line arguments.\n\n## Usage\n\n1. Download the pre-built binary or build it from source.\n2. Download [yt-dlp](https://github.com/yt-dlp/yt-dlp) or [youtube-dl](https://github.com/ytdl-org/youtube-dl).\n3. It's optional but highly recommended to also download [FFmpeg](https://ffmpeg.org/download.html). Otherwise you won't be able to merge separate video and audio tracks.\n4. The framework-dependent binary requires an installed [.NET Runtime](https://dotnet.microsoft.com/) to run. Alternatively, download the self-contained binary that bundles the runtime.\n5. Run `youtube-dl-wpf.exe`. Go to __Settings__. Set the path to youtube-dl/yt-dlp and FFmpeg.\n6. Go back to the home tab. Paste a video URL and start downloading! 🚀\n\n## FAQ\n\n1.  Q: The __Download__ button is grayed out and I can't click it!\n\n    A: `youtube-dl-wpf` i",
+      "scores": {
+        "novelty": 0.2803,
+        "health": 0.5,
+        "relevance": 0.7765,
+        "author_rep": 0.0,
+        "gem_score": 0.4478
+      },
+      "concepts": [
+        "-",
+        "https",
+        ".",
+        "download",
+        "- specify",
+        "specify custom",
+        ". -",
+        "youtube-dl"
+      ]
+    },
+    {
+      "name": "apple/servicetalk",
+      "url": "https://github.com/apple/servicetalk",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "= ServiceTalk\n\nimage:https://img.shields.io/maven-central/v/io.servicetalk/servicetalk-annotations?color=blue[Maven Central]\nimage:https://github.com/apple/servicetalk/actions/workflows/ci-snapshot.yml/badge.svg[Snapshot Publisher]\nimage:https://img.shields.io/nexus/s/io.servicetalk/servicetalk-annotations?color=blue&server=https%3A%2F%2Foss.sonatype.org[Sonatype Snapshot]\n\nServiceTalk is a JVM network application framework with APIs tailored to specific protocols (e.g. HTTP/1.x,\nHTTP/2.x, etc...) and supports multiple programming paradigms.\n\nIt is built on link:https://netty.io[Netty] and is designed to provide most of the performance/scalability benefits of\nNetty for common networking protocols used in service to service communication. ServiceTalk provides server support and\n\"smart client\" like features such as client-side load balancing and service discovery integration.\n\nSee the link:https://docs.servicetalk.io/[ServiceTalk docs] for more information.\n\n== Getting Started\n\nServiceTalk releases are available on link:https://repo1.maven.org/maven2/io/servicetalk/[Maven Central].\n\nRefer to the link:https://docs.servicetalk.io/[ServiceTalk docs] for various examples that will get you started with the\ndifferent features of ServiceTalk.\n\nNOTE: Builds of the development version are available in\nlink:https://central.sonatype.com/repository/maven-snapshots/io/servicetalk/[Sonatype's snapshots Maven repository].\n\n== Supported JVM\nThe minimum supported JDK version is 1.8.\n\n== Compatibility\nServiceTalk follows link:https://semver.org/#semantic-versioning-200[SemVer 2.0.0]. API/ABI breaking changes will\nrequire package renaming for that module to avoid runtime classpath conflicts.\n\nNOTE: `0.x.y` releases are not stable and are permitted to break API/ABI.\n\n== Contributor Setup\n\nIMPORTANT: If you're intending to contribute to ServiceTalk,\n           make sure to first read the xref:CONTRIBUTING.adoc[contribution guidelines].\n\nServiceTalk uses link:https://gradle.org[Gradle] as ",
+      "scores": {
+        "novelty": 0.1263,
+        "health": 0.5,
+        "relevance": 0.8046,
+        "author_rep": 0.0,
+        "gem_score": 0.3985
+      },
+      "concepts": [
+        "servicetalk",
+        "link https",
+        "https",
+        "link",
+        "----",
+        "source shell",
+        "shell ----",
+        "source"
+      ]
+    },
+    {
+      "name": "modelcontextprotocol/use-mcp",
+      "url": "https://github.com/modelcontextprotocol/use-mcp",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div class=\"oranda-hide\">\n\n# 🦑 use-mcp 🦑\n\n</div>\n\n[![GitHub last commit](https://img.shields.io/github/last-commit/modelcontextprotocol/use-mcp?logo=github&style=flat&label=​)](https://github.com/modelcontextprotocol/use-mcp)&nbsp; [![npm](https://img.shields.io/npm/v/use-mcp?label=​&logo=npm)](https://www.npmjs.com/package/use-mcp) ![GitHub License](https://img.shields.io/github/license/modelcontextprotocol/use-mcp)\n\nA lightweight React hook for connecting to [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol) servers. Simplifies authentication and tool calling for AI systems implementing the MCP standard.\n\nTry it out: [Chat Demo](https://chat.use-mcp.dev) | [MCP Inspector](https://inspector.use-mcp.dev) | [Cloudflare Workers AI Playground](https://playground.ai.cloudflare.com/)\n\n## Installation\n\n```bash\nnpm install use-mcp\n# or\npnpm add use-mcp\n# or\nyarn add use-mcp\n```\n\n## Development\n\nTo run the development environment with all examples and servers:\n\n```bash\npnpm dev\n```\n\nThis starts:\n- **Inspector**: http://localhost:5001 - MCP server debugging tool\n- **Chat UI**: http://localhost:5002 - Example chat interface\n- **Hono MCP Server**: http://localhost:5101 - Example MCP server\n- **CF Agents MCP Server**: http://localhost:5102 - Cloudflare Workers AI MCP server\n\n### Testing\n\nIntegration tests are located in the `test/` directory and run headlessly by default:\n\n```bash\ncd test && pnpm test              # Run tests headlessly (default)\ncd test && pnpm test:headed       # Run tests with visible browser\ncd test && pnpm test:watch        # Run tests in watch mode\ncd test && pnpm test:ui           # Run tests with interactive UI\n```\n\n## Features\n\n- 🔄 Automatic connection management with reconnection and retries\n- 🔐 OAuth authentication flow handling with popup and fallback support\n- 📦 Simple React hook interface for MCP integration\n- 🧰 Full support for MCP tools, resources, and prompts\n- 📄 Access server resources and read their contents\n- 💬 Use serve",
+      "scores": {
+        "novelty": 0.1158,
+        "health": 0.5,
+        "relevance": 0.8049,
+        "author_rep": 0.0,
+        "gem_score": 0.3939
+      },
+      "concepts": [
+        "mcp server",
+        "mcp",
+        "-",
+        "server",
+        "//",
+        "connection",
+        "https",
+        "string"
+      ]
+    },
+    {
+      "name": "reactiveui/splat",
+      "url": "https://github.com/reactiveui/splat",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![NuGet Stats](https://img.shields.io/nuget/v/splat.svg)](https://www.nuget.org/packages/splat) ![Build](https://github.com/reactiveui/splat/workflows/Build/badge.svg) [![Code Coverage](https://codecov.io/gh/reactiveui/splat/branch/main/graph/badge.svg)](https://codecov.io/gh/reactiveui/splat)\n<br>\n<a href=\"https://www.nuget.org/packages/splat\">\n        <img src=\"https://img.shields.io/nuget/dt/splat.svg\">\n</a>\n<a href=\"https://reactiveui.net/slack\">\n        <img src=\"https://img.shields.io/badge/chat-slack-blue.svg\">\n</a>\n\n<img src=\"https://github.com/reactiveui/styleguide/blob/master/logo_splat/logo.png?raw=true\" width=\"200\" />\n\n# Splat\n\nCertain types of things are basically impossible to do in cross-platform\nmobile code today, yet there's no reason why. Writing a ViewModel that handles\nloading a gallery of pictures from disk will be completely riddled with\n`#ifdefs` and basically unreadable.\n\nSplat aims to fix that, by providing a usable leaky abstraction above platform\ncode. It is leaky, because it always provides an extension method `ToNative()`\nand `FromNative()`, which converts the abstraction to the platform-specific\nversion. Load the image in the cross-platform code, then call `ToNative()` in\nyour view to actually display it.\n\n### What does it do?\n\nSplat currently supports:\n\n* Cross-platform image loading/saving\n* A port of System.Drawing.Color for portable libraries\n* Cross-platform geometry primitives (PointF, SizeF, RectangleF), as well as a bunch of\n  additional extension methods to make using them easier.\n* A way to detect whether you're in a Unit Test runner / Design Mode\n* A cross-platform logging framework\n* Simple yet flexible Service Location\n\n### Core Team\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\" valign=\"top\">\n        <img width=\"100\" height=\"100\" src=\"https://github.com/glennawatson.png?s=150\">\n        <br>\n        <a href=\"https://github.com/glennawatson\">Glenn Watson</a>\n        <p>Melbourne, Australia</p>\n      </td>\n      <td al",
+      "scores": {
+        "novelty": 0.1354,
+        "health": 0.5,
+        "relevance": 0.7755,
+        "author_rep": 0.0,
+        "gem_score": 0.3933
+      },
+      "concepts": [
+        "https",
+        "src https",
+        "href https",
+        "splat",
+        "service",
+        "br href",
+        "img",
+        "src"
+      ]
+    },
+    {
+      "name": "roleoroleo/yi-hack-Allwinner-v2",
+      "url": "https://github.com/roleoroleo/yi-hack-Allwinner-v2",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n\t<img height=\"200\" src=\"https://user-images.githubusercontent.com/39277388/96489837-43d26180-1240-11eb-9d0e-5cfa84040fe1.png\">\n</p>\n\n<p align=\"center\">\n\t<a target=\"_blank\" href=\"https://github.com/roleoroleo/yi-hack-Allwinner-v2/releases\">\n\t\t<img src=\"https://img.shields.io/github/downloads/roleoroleo/yi-hack-Allwinner-v2/total.svg\" alt=\"Releases Downloads\">\n\t</a>\n</p>\n\nyi-hack-Allwinner-v2 is a modification of the firmware for the Allwinner-based Yi Camera platform.\nWhat's the difference between v1 and v2? Allwinner-v2 is not an upgrade for Allwinner, it's a version dedicated to a different \"family\". Same cpu but different flash layout.\n\n## Table of Contents\n- [Table of Contents](#table-of-contents)\n- [Installation](#installation)\n- [Contributing](#contributing-and-bug-reports)\n- [Features](#features)\n- [Performance](#performance)\n- [Supported cameras](#supported-cameras)\n- [Is my cam supported?](#is-my-cam-supported)\n- [Home Assistant integration](#home-assistant-integration)\n- [Build your own firmware](#build-your-own-firmware)\n- [Unbricking](#unbricking)\n- [License](#license)\n- [Disclaimer](#disclaimer)\n- [Donation](#donation)\n\n\n## Installation\n\n### Backup\nIt's not easy to brick the cam but it can happen.\nSo please, make your backup copy: https://github.com/roleoroleo/yi-hack-Allwinner-v2/wiki/Dump-your-backup-firmware-(SD-card)\n\nAnyway, the hack procedure will create a backup for you.\n\n### Install Procedure\nIf you want to use the original Yi app, please install it and complete the pairing process before installing the hack.\n\nOtherwise, check setep 4.\n\n1. Format an SD Card as FAT32. It's recommended to format the card in the camera using the camera's native format function. If the card is already formatted, remove all the files.\n2. Download the latest release from the Releases page.\n3. Extract the contents of the archive to the root of your SD card. Your card should appear with this structure:\n```\n|-- Factory/\n|-- yi-hack/\n|-- lower_half_init.",
+      "scores": {
+        "novelty": 0.1061,
+        "health": 0.5,
+        "relevance": 0.7776,
+        "author_rep": 0.0,
+        "gem_score": 0.3867
+      },
+      "concepts": [
+        "-",
+        "- yi",
+        "yi",
+        "https",
+        "camera",
+        "if",
+        "yi 1080p",
+        "- rfus"
+      ]
+    },
+    {
+      "name": "geerlingguy/ansible-role-security",
+      "url": "https://github.com/geerlingguy/ansible-role-security",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Ansible Role: Security (Basics)\n\n[![CI](https://github.com/geerlingguy/ansible-role-security/actions/workflows/ci.yml/badge.svg)](https://github.com/geerlingguy/ansible-role-security/actions/workflows/ci.yml)\n\n**First, a major, MAJOR caveat**: the security of your servers is YOUR responsibility. If you think simply including this role and adding a firewall makes a server secure, then you're mistaken. Read up on Linux, network, and application security, and know that no matter how much you know, you can always make every part of your stack more secure.\n\nThat being said, this role performs some basic security configuration on RedHat and Debian-based linux systems. It attempts to:\n\n  - Install software to monitor bad SSH access (fail2ban)\n  - Configure SSH to be more secure (disabling root login, requiring key-based authentication, and allowing a custom SSH port to be set)\n  - Set up automatic updates (if configured to do so)\n\nThere are a few other things you may or may not want to do (which are not included in this role) to make sure your servers are more secure, like:\n\n  - Use logwatch or a centralized logging server to analyze and monitor log files\n  - Securely configure user accounts and SSH keys (this role assumes you're not using password authentication or logging in as root)\n  - Have a well-configured firewall (check out the `geerlingguy.firewall` role on Ansible Galaxy for a flexible example)\n\nAgain: Your servers' security is *your* responsibility.\n\n## Requirements\n\nFor obvious reasons, `sudo` must be installed if you want to manage the sudoers file with this role.\n\nOn RedHat/CentOS systems, make sure you have the EPEL repository installed (you can include the `geerlingguy.repo-epel` role to get it installed).\n\nNo special requirements for Debian/Ubuntu systems.\n\n## Role Variables\n\nAvailable variables are listed below, along with default values (see `defaults/main.yml`):\n\n    security_ssh_port: 22\n\nThe port through which you'd like SSH to be accessible. The de",
+      "scores": {
+        "novelty": 0.1991,
+        "health": 0.25,
+        "relevance": 0.7965,
+        "author_rep": 0.0,
+        "gem_score": 0.3641
+      },
+      "concepts": [
+        "-",
+        "no",
+        "if",
+        "# -",
+        "role",
+        ".",
+        "ssh",
+        "set"
+      ]
+    },
+    {
+      "name": "hahwul/MobileHackersWeapons",
+      "url": "https://github.com/hahwul/MobileHackersWeapons",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "\n<h1 align=\"center\">\n<br>\n<a href=\"https://github.com/hahwul/MobileHackersWeapons\"><img src=\"images/mhw.jpg\" alt=\"MobileHackersWeapons Logo\"></a>\n<br>\n<img src=\"https://img.shields.io/github/languages/top/hahwul/MobileHackersWeapons?style=flat\">\n<img src=\"https://img.shields.io/github/last-commit/hahwul/MobileHackersWeapons?style=flat\">\n<img src=\"https://img.shields.io/badge/PRs-welcome-cyan\">\n<img src=\"https://github.com/hahwul/MobileHackersWeapons/workflows/Build/badge.svg\">\n<img src=\"https://github.com/hahwul/MobileHackersWeapons/workflows/CodeQL/badge.svg\">\n<a href=\"https://twitter.com/intent/follow?screen_name=hahwul\"><img src=\"https://img.shields.io/twitter/follow/hahwul?style=flat&logo=twitter\"></a>\n</h1>\nA collection of cool tools used by Mobile hackers. Happy hacking , Happy bug-hunting\n\n## Family project\n[![WebHackersWeapons](https://img.shields.io/github/stars/hahwul/WebHackersWeapons?label=WebHackersWeapons)](https://github.com/hahwul/WebHackersWeapons)\n[![MobileHackersWeapons](https://img.shields.io/github/stars/hahwul/MobileHackersWeapons?label=MobileHackersWeapons)](https://github.com/hahwul/MobileHackersWeapons)\n\n## Table of Contents\n- [Weapons](#weapons)\n- [Contribute](/CONTRIBUTING.md)\n- [Thanks to contributor](#thanks-to-contributor)\n\n## Weapons\n*Attributes*\n|       | Attributes                                        |\n|-------|---------------------------------------------------|\n| Types | `Analysis` `Pentest` `Proxy` `RE` `Scripts` `Scanner` `Utils` `Device` `Discovery`, `Monitor`, `NFC`, `Target`, `Bluetooth`, `Jailbreak`, `Inject`, `Unpinning`|\n| Tags  | [`Inject`](/categorize/tags/Inject.md) [`SCRIPTS`](/categorize/tags/SCRIPTS.md) [`Hijack`](/categorize/tags/Hijack.md) [`Target`](/categorize/tags/Target.md) [`Jailbreak`](/categorize/tags/Jailbreak.md) [`Monitor`](/categorize/tags/Monitor.md) [`Unpinning`](/categorize/tags/Unpinning.md) [`Bluetooth`](/categorize/tags/Bluetooth.md) [`Discovery`](/categorize/tags/Discovery.md) [`NFC`](/categoriz",
+      "scores": {
+        "novelty": 0.1526,
+        "health": 0.25,
+        "relevance": 0.8155,
+        "author_rep": 0.0,
+        "gem_score": 0.3494
+      },
+      "concepts": [
+        "https",
+        "label",
+        "label re",
+        "analysis",
+        "img src",
+        "re",
+        "src https",
+        "--- ---"
+      ]
+    },
+    {
+      "name": "avinash201199/Free-courses-with-Certificates",
+      "url": "https://github.com/avinash201199/Free-courses-with-Certificates",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "\n\n## Check our website: [Website link](https://free-courses-with-certificates.netlify.app/) ✨\n\nIn today's highly competitive job market, securing internships or employment opportunities can be an arduous task. However, online courses have emerged as powerful tools to enhance one's resume and skillset. \n\nUnpaid online courses are an invaluable resource, as they are accessible to individuals from all walks of life, facilitating continuous learning and the refinement of both new and existing skills. In the contemporary landscape, possessing solely academic knowledge may not suffice; one must demonstrate a commitment to personal growth through hands-on experiences. \n\nEngaging in professional development activities, such as specialized training and online courses, can open doors to a plethora of opportunities. These activities are a testament to one's dedication to self-improvement and their pursuit of excellence in their chosen field. 📚\n\nAfter extensive research and effort, I have curated a selection of free online courses that provide certification across various domains. These courses offer a unique opportunity to bolster your qualifications, and the resulting certificates can be prominently displayed on your resume or LinkedIn profile, showcasing your commitment to continuous learning and professional development. 📜\n\nFeel free to explore these courses and take the next step in your journey toward personal and career growth. 🌐💼\n\n### How to contribute! 😎<br>\n\nYou can contribute in many ways to this repository\n\n1. If you are a beginner, then you can contribute by improving the structure of the repository. <br>\n2. Design the website for this repository with the content. <br>\n3. Add more free courses to the list below and in the main.js course_details list that are not present. <br>\n\nCheck [Contributing.md](https://github.com/avinash201199/Free-courses-with-Certificates/blob/main/CONTRIBUTING.md) file to get started\n\n#### Note- Before contributing, please create an issue ",
+      "scores": {
+        "novelty": 0.0866,
+        "health": 0.25,
+        "relevance": 0.7674,
+        "author_rep": 0.0,
+        "gem_score": 0.3197
+      },
+      "concepts": [
+        "br",
+        "br br",
+        "br website-https",
+        "https",
+        "-",
+        "website-https",
+        "details summary",
+        "/summary br"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "protocol",
+      "penetration",
+      "monitor",
+      "cyber security"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 1000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "a new protocol for penetration system",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "protocol",
+      "penetration",
+      "monitor",
+      "cyber security"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 46,
+    "probed": 20,
+    "selected": 16,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "confident-ai/deepteam",
+        "url": "https://github.com/confident-ai/deepteam",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.4233,
+        "relevance": 0.8163,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "deepteam",
+          "https",
+          "href https",
+          "llm",
+          "/a href",
+          "red teaming",
+          "red"
+        ],
+        "gem_score": 0.7522
+      },
+      {
+        "name": "pymc-labs/pymc-marketing",
+        "url": "https://github.com/pymc-labs/pymc-marketing",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.3894,
+        "relevance": 0.7658,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          ".",
+          "marketing",
+          "marketing mix",
+          "pymc-marketing",
+          "bayesian",
+          "pymc",
+          "notebook https"
+        ],
+        "gem_score": 0.6091
+      },
+      {
+        "name": "openatx/adbutils",
+        "url": "https://github.com/openatx/adbutils",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.3565,
+        "relevance": 0.7997,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "#",
+          "adb",
+          "device",
+          "print",
+          "tcp",
+          "python",
+          "output",
+          "tcp #"
+        ],
+        "gem_score": 0.5415
+      },
+      {
+        "name": "newrelic/node-newrelic",
+        "url": "https://github.com/newrelic/node-newrelic",
+        "license": "Apache-2.0",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.2907,
+        "relevance": 0.8165,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "newrelic",
+          "agent",
+          "instrumentation",
+          "relic",
+          "node.js",
+          "node.js agent",
+          "/"
+        ],
+        "gem_score": 0.5204
+      },
+      {
+        "name": "Badgerati/Pode",
+        "url": "https://github.com/Badgerati/Pode",
+        "license": "MIT",
+        "role": "module (PowerShell)",
+        "novelty_score": 0.0935,
+        "relevance": 0.8018,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "support",
+          "powershell",
+          "pode",
+          "logocolor white",
+          "documentation",
+          "label",
+          "logo"
+        ],
+        "gem_score": 0.51
+      },
+      {
+        "name": "ngtcp2/nghttp3",
+        "url": "https://github.com/ngtcp2/nghttp3",
+        "license": "MIT",
+        "role": "module (C)",
+        "novelty_score": 0.2473,
+        "relevance": 0.819,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "_",
+          "rfc https",
+          "-",
+          "nghttp3",
+          "rfc",
+          "http/3",
+          "https //datatracker.ietf.org/doc/html/rf"
+        ],
+        "gem_score": 0.5089
+      },
+      {
+        "name": "ThisSeanZhang/landscape",
+        "url": "https://github.com/ThisSeanZhang/landscape",
+        "license": "GPL-3.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.2446,
+        "relevance": 0.8202,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "dns",
+          "u",
+          "/u",
+          "--- ##",
+          "/",
+          "ip",
+          "---"
+        ],
+        "gem_score": 0.5069
+      },
+      {
+        "name": "projectdiscovery/alterx",
+        "url": "https://github.com/projectdiscovery/alterx",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.1915,
+        "relevance": 0.785,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "alterx",
+          "-",
+          "subdomain",
+          "/a href",
+          "patterns",
+          ".",
+          "href"
+        ],
+        "gem_score": 0.4804
+      },
+      {
+        "name": "database64128/youtube-dl-wpf",
+        "url": "https://github.com/database64128/youtube-dl-wpf",
+        "license": "GPL-3.0",
+        "role": "module (C#)",
+        "novelty_score": 0.2803,
+        "relevance": 0.7765,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          ".",
+          "download",
+          "- specify",
+          "specify custom",
+          ". -",
+          "youtube-dl"
+        ],
+        "gem_score": 0.4478
+      },
+      {
+        "name": "apple/servicetalk",
+        "url": "https://github.com/apple/servicetalk",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.1263,
+        "relevance": 0.8046,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "servicetalk",
+          "link https",
+          "https",
+          "link",
+          "----",
+          "source shell",
+          "shell ----",
+          "source"
+        ],
+        "gem_score": 0.3985
+      },
+      {
+        "name": "modelcontextprotocol/use-mcp",
+        "url": "https://github.com/modelcontextprotocol/use-mcp",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.1158,
+        "relevance": 0.8049,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "mcp server",
+          "mcp",
+          "-",
+          "server",
+          "//",
+          "connection",
+          "https",
+          "string"
+        ],
+        "gem_score": 0.3939
+      },
+      {
+        "name": "reactiveui/splat",
+        "url": "https://github.com/reactiveui/splat",
+        "license": "MIT",
+        "role": "module (C#)",
+        "novelty_score": 0.1354,
+        "relevance": 0.7755,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "src https",
+          "href https",
+          "splat",
+          "service",
+          "br href",
+          "img",
+          "src"
+        ],
+        "gem_score": 0.3933
+      },
+      {
+        "name": "roleoroleo/yi-hack-Allwinner-v2",
+        "url": "https://github.com/roleoroleo/yi-hack-Allwinner-v2",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.1061,
+        "relevance": 0.7776,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "- yi",
+          "yi",
+          "https",
+          "camera",
+          "if",
+          "yi 1080p",
+          "- rfus"
+        ],
+        "gem_score": 0.3867
+      },
+      {
+        "name": "geerlingguy/ansible-role-security",
+        "url": "https://github.com/geerlingguy/ansible-role-security",
+        "license": "MIT",
+        "role": "module (Jinja)",
+        "novelty_score": 0.1991,
+        "relevance": 0.7965,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "no",
+          "if",
+          "# -",
+          "role",
+          ".",
+          "ssh",
+          "set"
+        ],
+        "gem_score": 0.3641
+      },
+      {
+        "name": "hahwul/MobileHackersWeapons",
+        "url": "https://github.com/hahwul/MobileHackersWeapons",
+        "license": "MIT",
+        "role": "module (Ruby)",
+        "novelty_score": 0.1526,
+        "relevance": 0.8155,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "label",
+          "label re",
+          "analysis",
+          "img src",
+          "re",
+          "src https",
+          "--- ---"
+        ],
+        "gem_score": 0.3494
+      },
+      {
+        "name": "avinash201199/Free-courses-with-Certificates",
+        "url": "https://github.com/avinash201199/Free-courses-with-Certificates",
+        "license": "MIT",
+        "role": "module (CSS)",
+        "novelty_score": 0.0866,
+        "relevance": 0.7674,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "br",
+          "br br",
+          "br website-https",
+          "https",
+          "-",
+          "website-https",
+          "details summary",
+          "/summary br"
+        ],
+        "gem_score": 0.3197
+      }
+    ],
+    "architecture_ascii": "[1] confident-ai/deepteam  →  [2] pymc-labs/pymc-marketing  →  [3] openatx/adbutils  →  [4] newrelic/node-newrelic  →  [5] Badgerati/Pode  →  [6] ngtcp2/nghttp3  →  [7] ThisSeanZhang/landscape  →  [8] projectdiscovery/alterx  →  [9] database64128/youtube-dl-wpf  →  [10] apple/servicetalk  →  [11] modelcontextprotocol/use-mcp  →  [12] reactiveui/splat  →  [13] roleoroleo/yi-hack-Allwinner-v2  →  [14] geerlingguy/ansible-role-security  →  [15] hahwul/MobileHackersWeapons  →  [16] avinash201199/Free-courses-with-Certificates\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "protocol",
+        "penetration",
+        "monitor",
+        "cyber security"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 46,
+      "probed": 20,
+      "selected": 16,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

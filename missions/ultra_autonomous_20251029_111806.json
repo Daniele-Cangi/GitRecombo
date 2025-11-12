@@ -1,0 +1,254 @@
+{
+  "timestamp": "2025-10-29T11:18:06.857856",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC. Include a light machine learning",
+  "repository_synergy": "",
+  "technical_architecture": "",
+  "expected_impact": "",
+  "innovation_analysis": "",
+  "sources": [
+    {
+      "name": "cloudcommunity/Free-Certifications",
+      "url": "https://github.com/cloudcommunity/Free-Certifications",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "",
+      "scores": {
+        "novelty": 0.2796,
+        "health": 0.0,
+        "relevance": 0.7928,
+        "author_rep": 0.0,
+        "gem_score": 0.0
+      },
+      "concepts": [
+        "link https",
+        "https",
+        "link",
+        "free",
+        "cloud",
+        "unknown",
+        "courses",
+        "-"
+      ]
+    },
+    {
+      "name": "Trinea/android-open-project",
+      "url": "https://github.com/Trinea/android-open-project",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "",
+      "scores": {
+        "novelty": 0.1351,
+        "health": 0.0,
+        "relevance": 0.799,
+        "author_rep": 0.0,
+        "gem_score": 0.0
+      },
+      "concepts": [
+        "e5",
+        "https",
+        "e4",
+        "e6",
+        "e5 b7",
+        "e7",
+        "e4 b8",
+        "https //github.com/trinea/android-open-p"
+      ]
+    },
+    {
+      "name": "BD8KR3M/bos-p",
+      "url": "https://github.com/BD8KR3M/bos-p",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "",
+      "scores": {
+        "novelty": 0.0218,
+        "health": 0.0,
+        "relevance": 0.8065,
+        "author_rep": 0.0,
+        "gem_score": 0.0
+      },
+      "concepts": [
+        "br",
+        "git",
+        "br pkg",
+        "-y br",
+        "install git",
+        "git clone",
+        "clone https",
+        "cd bos-p"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "pishing",
+      "satellite"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC. Include a light machine learning",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "pishing",
+      "satellite"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 9,
+    "probed": 9,
+    "selected": 3,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "cloudcommunity/Free-Certifications",
+        "url": "https://github.com/cloudcommunity/Free-Certifications",
+        "license": "MIT",
+        "role": "module (NA)",
+        "novelty_score": 0.2796,
+        "relevance": 0.7928,
+        "health_score": 0.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "link https",
+          "https",
+          "link",
+          "free",
+          "cloud",
+          "unknown",
+          "courses",
+          "-"
+        ],
+        "gem_score": 0.0
+      },
+      {
+        "name": "Trinea/android-open-project",
+        "url": "https://github.com/Trinea/android-open-project",
+        "license": "Apache-2.0",
+        "role": "module (NA)",
+        "novelty_score": 0.1351,
+        "relevance": 0.799,
+        "health_score": 0.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "e5",
+          "https",
+          "e4",
+          "e6",
+          "e5 b7",
+          "e7",
+          "e4 b8",
+          "https //github.com/trinea/android-open-p"
+        ],
+        "gem_score": 0.0
+      },
+      {
+        "name": "BD8KR3M/bos-p",
+        "url": "https://github.com/BD8KR3M/bos-p",
+        "license": "Apache-2.0",
+        "role": "module (HTML)",
+        "novelty_score": 0.0218,
+        "relevance": 0.8065,
+        "health_score": 0.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "br",
+          "git",
+          "br pkg",
+          "-y br",
+          "install git",
+          "git clone",
+          "clone https",
+          "cd bos-p"
+        ],
+        "gem_score": 0.0
+      }
+    ],
+    "architecture_ascii": "[1] cloudcommunity/Free-Certifications  →  [2] Trinea/android-open-project  →  [3] BD8KR3M/bos-p\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "pishing",
+        "satellite"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 9,
+      "probed": 9,
+      "selected": 3,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

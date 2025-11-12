@@ -1,0 +1,349 @@
+{
+  "timestamp": "2025-10-27T23:57:19.329881",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Design and deploy a resilient, user-owned PC protection stack that: 1) hardens your network edge with a Raspberry Pi–based transparent bridge capable of immediate hardware isolation, 2) instrument your PC to capture phishing/ intrusion artifacts, 3) automatically enrich those artifacts via curated public threat APIs, and 4) probabilistically trace attacker infrastructure paths using a repurposed propagation engine. Concretely: build a stable-pi-core–based sentinel bridge with PlatformIO-driven hardware kill-switch, a PC agent that streams indicators to the sentinel, an OSINT pipeline bootstrapped from public-apis/public-apis, and an offline backtracer that adapts CRPropa3’s Monte Carlo propagation to internet AS topologies. Success means: sub-2s block on malicious domains/IPs, <1% false positives over 30 days, audited backtraces for at least 60% of unique campaigns, and operator awareness boosted via Reach-based audio cues. This matters because it makes attribution-oriented defense practical at home scale.",
+  "repository_synergy": "THE INSIGHT: None of these repos is a typical security product—and that’s the opportunity. Public-apis/public-apis is a living map of free OSINT endpoints; platformio-core is a way to turn any microcontroller into part of your security fabric; stable-pi-core is the substrate for a rock-solid, minimal OS; CRPropa3 models particle propagation with fields and stochastic scatter; Reach is a creative, low-latency DSP engine. Brought together, they yield a home/SMB defense that not only blocks threats but also reconstructs where they likely came from—then communicates risk intuitively.\n\nTHE STORY: Why these, not the obvious IDS/EDR stacks? Because we want portability, explainability, and cost transparency without vendor lock-in.\n- public-apis/public-apis: Instead of pre-baking costly intel feeds, we harvest a curated, community-vetted catalog to auto-wire free or freemium reputation services (abuse reporting, DNS, URL scanning). The repo is our API discovery layer.\n- platformio/platformio-core: Security hardening often fails at the last mile—when you need to physically sever the link. PlatformIO lets us quickly compile firmware for a tiny MCU relay linked to the Pi. When policy triggers, the network drops in milliseconds—no kernel stall, no process hang.\n- KOSASIH/stable-pi-core: A Pi is perfect as an inline transparent bridge, but only if it’s stable and reproducible. This repo anchors the image, services, and configuration ethos to keep the sentinel deterministic and auto-recovering.\n- CRPropa/CRPropa3: Attack attribution is like inferring a source in a noisy medium. CRPropa’s core competence—stochastic propagation in structured fields—is surprisingly aligned with modeling internet path likelihoods through AS-level “fields,” exit nodes, fast-flux CDNs, and resolver “magnetizations.” We translate routing biases into fields and treat redirect chains as scatter.\n- Sinuslabs/Reach: Security UIs overwhelm. Reach lets us sonify risk states with timbre and decay that the brain parses instantly. A sharp transient for a new IOC, a long tail for persistent campaigns—zero learning curve, instant attention.\n\nTHE SYNERGY: The Pi sentinel becomes a programmable edge: hard network policy plus a dynamic OSINT brain harvested from the public-apis list. The MCU adds a hardware final say. CRPropa3 turns your evidence chain into a probabilistic origin map, turning raw logs into investigative momentum. Reach turns alerts into instantly meaningful sound sketches.\n\nTHE INNOVATION: This is not just blocking. It’s attribution-oriented home defense. You don’t merely stop a phishing link—you collect headers, redirects, resolver footprints, and then simulate likely infrastructure origins while feeding abuse desks with precise, documented reports. The novelty is using a physics propagation engine for cyber backtracing and treating a Pi as a composable enforcement plus enrichment hub.\n\nTHE BRIDGE: We build a “Public APIs Harvester” that scrapes/ingests the public-apis list, auto-generates connectors, and activates a short list of security endpoints. The Pi runs a transparent bridge configured via stable-pi-core; an attached MCU built with platformio-core controls a relay on the Ethernet line. Events from the PC agent flow to the Pi; a CRPropa3 sidecar ingests graph data and produces origin likelihoods; Reach powers a tiny web UI with distinctive audio cues tied to policy state. The result: a cohesive, low-dependency, high-agency defense lattice.",
+  "technical_architecture": "Components\n- PC Agent (Python): Hooks into OS event sources (browser download directory monitor, DNS cache query watcher, mail client EML export folder, system firewall logs) and normalizes artifacts: URLs, domains, IPs, file hashes, email headers. Sends to Sentinel over gRPC with TLS.\n- Sentinel Bridge (Raspberry Pi): Built on KOSASIH/stable-pi-core principles for a reproducible, stable image. Operates as a transparent L2 bridge (br0 over eth0/eth1) with nftables for policy. Includes:\n  - Enrichment Service: Uses an auto-generated registry from public-apis/public-apis to call selected OSINT endpoints (e.g., AbuseIPDB, urlscan.io, ipinfo, PhishTank) based on credentials present in a secrets vault. Caches reputations with TTL-aware backoff.\n  - Policy Engine: Real-time decisions (allow/quarantine/block) on flows, updating nftables sets. Triggers MCU relay on critical state.\n  - Event Bus: Local NATS or ZeroMQ channel for decoupling producers (PC Agent, Bridge Tap) and consumers (Enrich, Policy, CRPropa Sidecar, UI). If minimalism preferred, use UNIX domain sockets.\n  - Bridge Tap: Parses netfilter queue samples for suspect flows (SNI, DoH endpoints, DNS packets) without full DPI.\n- Hardware Kill-Switch (MCU): ESP32/STM32 running firmware built with platformio-core. Controls a relay inline with the PC’s Ethernet patch or a powered USB Ethernet adapter. UART to Pi for commands, hardware watchdog for fail-safe default to open or closed per policy.\n- Backtrace Sidecar (CRPropa3): Standalone process using CRPropa3 C++ libs via a CLI wrapper. Input: redirect graph, observed resolver IPs, TTL patterns, ASN path candidates (from public API data, e.g., Team Cymru IP-to-ASN via listed APIs), and timing jitter. Model: AS graph as a field; CDNs/fast-flux as high-scatter regions; exit nodes as sources with priors. Output: posterior over origin ASNs and infrastructure clusters with confidence intervals.\n- UI + Sonification (Reach): Web UI served by the Sentinel. Uses Sinuslabs/Reach’s DSP to generate earcons: short bright impulses for high-confidence malicious IOCs, mellow decays for quarantined events, and evolving reverbs for ongoing campaigns. Visual panes for flow state, enrichment results, and backtrace map overlays.\n\nKey Flows\n1) Artifact ingest: PC Agent -> gRPC -> Sentinel Event Bus -> Enrichment -> Policy -> nftables sets + MCU state.\n2) Edge observation: Bridge Tap -> Event Bus -> Enrichment (as needed) -> Policy.\n3) Backtrace: Enriched IOC bundle -> CRPropa3 Sidecar -> Origin likelihood report -> UI.\n4) Abuse reporting: Enrichment -> API connectors (from public-apis list) to submit abuse tickets (when available), with opt-in.\n\nAPIs/Interfaces\n- gRPC with TLS for PC<->Sentinel. Protobuf schema: Artifact, EnrichmentResult, PolicyDecision, BacktraceReport.\n- MCU control: UART at fixed baud with simple CBOR messages: {cmd: CUT|RESTORE|PING, reason, ttl}.\n- Enrichment connectors: HTTPS REST; consolidated by parsing public-apis list (YAML/Markdown) to preselect Security, Anti-Malware, Geolocation categories; wrapper enforces timeouts, retries, and rate-limits.\n\nPerformance and Optimizations\n- Caching: IOC reputation cache keyed by normalized indicator + versioned source, with negative caching to avoid storming APIs.\n- Sampling: Only mirror initial packets of new TCP flows; leverage SNI for TLS domains without full TLS interception.\n- Set-based filtering: nftables named sets for domains/IPs enable O(1) policy checks.\n- Asynchrony: Event bus prevents UI/Policy lockups under load.\n- Isolation and Licensing: CRPropa3 and Reach are GPL-3.0. To avoid copyleft obligations for the whole stack, run them as separate processes with file/IPC boundaries and clearly separated distribution, keeping the core policy agent permissively licensed.",
+  "expected_impact": "Use Cases\n1) Click-time interdiction: When a user clicks a suspicious link, the PC Agent extracts the URL, the Sentinel enriches via public APIs, and if high-risk, adds the domain to an nftables set within 1–2 seconds; the MCU cuts the link if a payload attempt is already underway.\n2) Email header forensics to backtrace: User saves phishing EML; the Agent parses Received headers, nameservers, and links. CRPropa3 computes likely origin AS clusters, accounting for fast-flux nodes as scatter. The UI shows a ranked origin map and prefilled abuse contacts.\n3) Safe sandboxed follow: Operator opens a phishing URL behind the Sentinel; it appends a unique, non-invasive tag and records the redirect chain, achieving a complete infrastructure map without executing payloads.\n4) DNS hardening with graceful UX: Sentinel detects sudden resolver changes or DoH to unknown endpoints; it alerts with a distinct Reach earcon and blocks until user confirms, reducing silent hijacks.\n5) Reporting loop: Enriched IOCs auto-generate reports to AbuseIPDB or equivalent APIs from public-apis; receipts and rate-limits are tracked in the UI.\n6) Family/SMB mode: Profiles enforce stricter rules and automatic cutoffs during off-hours; audio cues make it obvious when risky activity hits.\n7) Travel mode: Sentinel Pi + MCU travels with you; policies and caches sync from home, giving consistent protection on untrusted networks.\n\nScalability and Extensibility\n- Horizontal: Multiple PCs report to one Sentinel; nftables sets handle aggregate IOC size. The cache reduces API load.\n- Extensible: Add new OSINT connectors by re-parsing public-apis upstream list on schedule; no code changes needed for many.\n\nLimitations and Mitigations\n- HTTPS payload visibility is limited: rely on SNI and metadata; avoid full TLS interception to preserve privacy and simplicity.\n- Backtrace confidence: CRPropa3 provides probabilistic inference; present confidence bands and never assert identity.\n- API rate limits: Employ caching, exponential backoff; allow local-only mode during outages.\n- Hardware dependency: MCU relay requires build and wiring; offer a software-only fallback with router-integrated blocking.",
+  "innovation_analysis": "Innovation score: 8.5/10. The unconventional reuse of CRPropa3 for cyber backtracing, combined with a stable Pi bridge, PlatformIO-driven hardware cut-off, and auto-harvested OSINT from public-apis, creates a uniquely attribution-aware home defense.\n\nNext steps\n1) Stand up the Sentinel bridge with stable-pi-core conventions; validate nftables policy path.\n2) Build the Public APIs Harvester to auto-generate connectors for 3–5 key endpoints; implement caching.\n3) Implement the MCU relay firmware with platformio-core and wire UART control.\n4) Build the gRPC schema and PC Agent for URL/domain/hash/header ingest.\n5) Prototype CRPropa3 sidecar: define AS-graph field mapping and run small Monte Carlo tests on real phishing samples.\n6) Add Reach-based alert sounds and a minimal web UI.\n\nMetrics\n- Time-to-block (median, p95).\n- False positive rate on known-good sites.\n- IOC enrichment coverage and latency.\n- Backtrace origin confidence and validation rate.\n- Mean time to hardware cut on critical events.\n\nEssential tools/frameworks\n- platformio-core CLI for MCU builds.\n- stable-pi-core setup for Pi imaging/config.\n- CRPropa3 compiled as a standalone sidecar.\n- public-apis list parser to seed OSINT modules.\n- Sinuslabs/Reach for web-based DSP alerts.",
+  "sources": [
+    {
+      "name": "public-apis/public-apis",
+      "url": "https://github.com/public-apis/public-apis",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Try Public APIs for free\nThe Public APIs repository is manually curated by community members like you and folks working at [APILayer](https://apilayer.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo). It includes an extensive list of public APIs from many domains that you can use for your own products. Consider it a treasure trove of APIs well-managed by the community over the years.\n\n<br >\n\n<p>\n    <a href=\"https://apilayer.com\">\n        <div>\n            <img src=\".github/cs1586-APILayerLogoUpdate2022-LJ_v2-HighRes.png\" width=\"100%\" alt=\"APILayer Logo\" />\n        </div>\n    </a>\n  </p>\n\nAPILayer is the fastest way to integrate APIs into any product. Explore [APILayer APIs](https://apilayer.com/products/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) here for your next project.\n\nJoin our [Discord server](https://discord.com/invite/hgjA78638n/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) to get updates, ask questions, get answers, random community calls, and more.\n\n<br >\n\n## APILayer APIs\n| API | Description | Call this API |\n|:---|:---|:---|\n| [IPstack](https://ipstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Locate and Identify Website Visitors by IP Address | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; height: 32px;\">](https://god.gw.postman.com/run-collection/10131015-55145132-244c-448c-8e6f-8780866e4862?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D10131015-55145132-244c-448c-8e6f-8780866e4862%26entityType%3Dcollection%26workspaceId%3D2b7498b6-6d91-4fa8-817f-608441fe42a8)|\n| [Marketstack](https://marketstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Free, easy-to-use REST API interface delivering worldwide stock market data in JSON format | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; heigh",
+      "scores": {
+        "novelty": 0.5872,
+        "health": 0.25,
+        "relevance": 0.8044,
+        "author_rep": 0.0,
+        "gem_score": 0.6191
+      },
+      "concepts": [
+        "https",
+        "yes",
+        "no",
+        "no yes",
+        "utm_source github",
+        "github utm_medium",
+        "utm_medium referral",
+        "referral utm_campaign"
+      ]
+    },
+    {
+      "name": "platformio/platformio-core",
+      "url": "https://github.com/platformio/platformio-core",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "PlatformIO Core\n===============\n\n.. image:: https://github.com/platformio/platformio-core/workflows/Core/badge.svg\n    :target: https://docs.platformio.org/en/latest/core/index.html\n    :alt:  CI Build for PlatformIO Core\n.. image:: https://github.com/platformio/platformio-core/workflows/Docs/badge.svg\n    :target: https://docs.platformio.org?utm_source=github&utm_medium=core\n    :alt:  CI Build for Docs\n.. image:: https://github.com/platformio/platformio-core/workflows/Examples/badge.svg\n    :target: https://github.com/platformio/platformio-examples\n    :alt:  CI Build for dev-platform examples\n.. image:: https://github.com/platformio/platformio-core/workflows/Projects/badge.svg\n    :target: https://docs.platformio.org/en/latest/tutorials/index.html#projects\n    :alt:  CI Build for the Community Projects\n.. image:: https://img.shields.io/pypi/v/platformio.svg\n    :target: https://pypi.python.org/pypi/platformio/\n    :alt: Latest Version\n.. image:: https://img.shields.io/badge/PlatformIO-Labs-orange.svg\n   :alt: PlatformIO Labs\n   :target: https://piolabs.com/?utm_source=github&utm_medium=core\n\n**Quick Links:** `Homepage <https://platformio.org?utm_source=github&utm_medium=core>`_ |\n`PlatformIO IDE <https://platformio.org/platformio-ide?utm_source=github&utm_medium=core>`_ |\n`Registry <https://registry.platformio.org?utm_source=github&utm_medium=core>`_ |\n`Project Examples <https://github.com/platformio/platformio-examples/>`__ |\n`Docs <https://docs.platformio.org?utm_source=github&utm_medium=core>`_ |\n`Donate <https://platformio.org/donate?utm_source=github&utm_medium=core>`_ |\n`Contact Us <https://piolabs.com/?utm_source=github&utm_medium=core>`_\n\n**Social:** `LinkedIn <https://www.linkedin.com/company/platformio/>`_ |\n`Twitter <https://twitter.com/PlatformIO_Org>`_ |\n`Facebook <https://www.facebook.com/platformio>`_ |\n`Community Forums <https://community.platformio.org?utm_source=github&utm_medium=core>`_\n\n.. image:: https://raw.githubusercontent.com/platformio/p",
+      "scores": {
+        "novelty": 0.0833,
+        "health": 0.75,
+        "relevance": 0.82,
+        "author_rep": 0.0,
+        "gem_score": 0.4515
+      },
+      "concepts": [
+        "https",
+        "utm_source github",
+        "github utm_medium",
+        "utm_medium core",
+        "core _",
+        "core",
+        "utm_source",
+        "github"
+      ]
+    },
+    {
+      "name": "KOSASIH/stable-pi-core",
+      "url": "https://github.com/KOSASIH/stable-pi-core",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![CircleCI](https://dl.circleci.com/status-badge/img/gh/KOSASIH/stable-pi-core/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/KOSASIH/stable-pi-core/tree/main)\n![Build Status](https://img.shields.io/badge/build-passing-brightgreen)\n![Version](https://img.shields.io/badge/version-1.0.0-blue)\n[![CodeQL Advanced](https://github.com/KOSASIH/stable-pi-core/actions/workflows/codeql.yml/badge.svg)](https://github.com/KOSASIH/stable-pi-core/actions/workflows/codeql.yml)\n\n[![Certified Blockchain Expert](https://img.shields.io/badge/Blockchain%20Council-Certified%20Blockchain%20Expert-4CAF50?style=for-the-badge)](https://www.blockchain-council.org/)\n[![Stanford Blockchain Certificate](https://img.shields.io/badge/Stanford%20University-Blockchain%20Certificate-FF5733?style=for-the-badge)](https://online.stanford.edu/courses/sohs-ystanford-blockchain)\n[![Certified FinTech Professional](https://img.shields.io/badge/FinTech%20Certification%20Program-Certified%20FinTech%20Professional-0072B8?style=for-the-badge)](https://www.fintechcertification.org/)\n[![ISO 20022 Certified](https://img.shields.io/badge/ISO%2020022-Certified%20Standard-FF9800?style=for-the-badge)](https://www.iso20022.org/)\n[![Certified Digital Currency Professional](https://img.shields.io/badge/Digital%20Currency%20Council-Certified%20Digital%20Currency%20Professional-8E44AD?style=for-the-badge)](https://www.digitalcurrencycouncil.com/)\n[![CFA Institute](https://img.shields.io/badge/CFA%20Institute-Certified%20Financial%20Analyst-2E86C1?style=for-the-badge)](https://www.cfainstitute.org/)\n[![Certified Financial Planner](https://img.shields.io/badge/CFP%20Board-Certified%20Financial%20Planner-FF5733?style=for-the-badge)](https://www.cfp.net/)\n[![International Blockchain Association](https://img.shields.io/badge/International%20Blockchain%20Association-Member-00BFFF?style=for-the-badge)](https://www.ibc.org/)\n[![Certified Cryptocurrency Trader](https://img.shields.io/badge/Cryptocurrenc",
+      "scores": {
+        "novelty": 0.015,
+        "health": 0.75,
+        "relevance": 0.8109,
+        "author_rep": 0.0,
+        "gem_score": 0.4221
+      },
+      "concepts": [
+        "https",
+        "style for-the-badge",
+        "for-the-badge https",
+        "style",
+        "for-the-badge",
+        "certification https",
+        "certified",
+        "certification"
+      ]
+    },
+    {
+      "name": "CRPropa/CRPropa3",
+      "url": "https://github.com/CRPropa/CRPropa3",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "CRPropa\n========\n\n![stable release](https://img.shields.io/badge/stable\\_release-3.2.1-darkblue)\n\n[![Build: ubuntu22](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_ubuntu22.yml/badge.svg)](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_ubuntu22.yml)\n[![Build: ubuntu20](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_ubuntu20.yml/badge.svg)](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_ubuntu20.yml)\n[![Build: macos14](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_OSX.yml/badge.svg)](https://github.com/CRPropa/CRPropa3/actions/workflows/testing_OSX.yml)\n[![Examples](https://github.com/CRPropa/CRPropa3/actions/workflows/test_examples.yml/badge.svg)](https://github.com/CRPropa/CRPropa3/actions/workflows/test_examples.yml)\n\n![Issues](https://img.shields.io/github/issues/crpropa/CRPropa3)\n![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/crpropa/CRPropa3)\n\n[![DOI:10.1088/1475-7516/2022/09/035](http://img.shields.io/badge/DOI-10.1088/1475-7516/2022/09/035.svg)](<https://doi.org/10.1088/1475-7516/2022/09/035>)\n[![arXiv](https://img.shields.io/badge/arXiv-2208.00107-b31b1b.svg)](https://arxiv.org/abs/2208.00107)\n[![ascl:2208.016](https://img.shields.io/badge/ascl-2208.016-blue.svg?colorB=262255)](https://ascl.net/2208.016)\n\nCRPropa is a publicly available simulation framework to study the propagation\nof ultra-high-energy nuclei up to iron on their voyage through an\n(extra)galactic environment. It takes into account: pion production,\nphotodisintegration and energy losses by pair production of all relevant\nisotopes in the ambient low-energy photon fields as well as nuclear decay.\nCRPropa can model the deflection in (inter)galactic magnetic fields, the\npropagation of secondary electromagnetic cascades and neutrinos for a multitude\nof scenarios for different source distributions and magnetic environments. It\nenables the user to predict the spectra of UHECR (and of their secondar",
+      "scores": {
+        "novelty": 0.0492,
+        "health": 0.5,
+        "relevance": 0.7819,
+        "author_rep": 0.0,
+        "gem_score": 0.3663
+      },
+      "concepts": [
+        "https",
+        "crpropa",
+        "can",
+        "##",
+        ".",
+        "documentation",
+        ". ##",
+        "can found"
+      ]
+    },
+    {
+      "name": "Sinuslabs/Reach",
+      "url": "https://github.com/Sinuslabs/Reach",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# Reach ✨\n*A Handcrafted Reverb with a Psychedelic Edge*\n\n<p align=\"center\">\n  <img src=\"https://github.com/user-attachments/assets/c007699c-bf73-4c88-908b-ea9d9a1a5be1\" alt=\"Reach User Interface Screenshot\" width=\"700\"/>\n</p>\n<p align=\"center\">\n  <em>Minimal UI with Light/Dark themes and interactive visual feedback.</em>\n</p>\n\nReach is a modern creative reverb plugin designed specifically for synthetic sound sources. It excels at creating lush atmospheric textures, deep cinematic spaces, and unique psychedelic ambiences.\n\n---\n\n## Key Features\n\n* **Tailored for Synths:** Optimized for electronic and synthetic sound sources.\n* **Modular Effects:** Includes 4 distinct effects (e.g., Delay, Chorus - *adjust if different*) integrated into the reverb path with flexible routing options.\n* **Tonal Shaping:** Pre and Post EQ filters provide detailed control over the reverb's frequency content.\n* **Extensive Presets:** Ships with 50+ presets to get you started instantly (and you can contribute your own!).\n* **Intuitive UI:** Clear, minimalistic design with switchable Light & Dark themes..\n* **Tuned for performance:** Low CPU usage\n\n---\n\n## Downloads\n\nGet the latest release for your operating system:\n\n* [**Windows** (.exe)](https://github.com/Sinuslabs/Reach/releases/latest/download/Reach-Windows.exe)\n* [**macOS** (.pkg)](https://github.com/Sinuslabs/Reach/releases/latest/download/Reach-MacOS.pkg)\n* [**Linux** (.zip)](https://github.com/Sinuslabs/Reach/releases/latest/download/Reach-Linux.zip)\n\n---\n\n## Installation & Usage\n\n1.  **Download:** Grab the correct installer/archive for your OS from the links above.\n2.  **Install:** Run the installer (Windows/macOS/Linux)\n3.  **Scan:** Open your DAW and run its plugin scan. Reach should now be available to load onto an FX Track.\n\n---\n\n## Sound Demos\n\nHear Reach in action on various sound sources:\n▶️ [**Listen on SoundCloud**](https://soundcloud.com/sinuslabs/sets/reach-music-demos)\n\n---\n\n**Code & Other Contributions:**\nIf you're int",
+      "scores": {
+        "novelty": 0.0103,
+        "health": 0.25,
+        "relevance": 0.7848,
+        "author_rep": 0.0,
+        "gem_score": 0.2938
+      },
+      "concepts": [
+        "--- ##",
+        "https",
+        "---",
+        "reach",
+        "##",
+        "reverb",
+        "sound",
+        "p align"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "ufo",
+      "aliens",
+      "extraterrestrial"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 16,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC.",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "ufo",
+      "aliens",
+      "extraterrestrial"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 13,
+    "probed": 13,
+    "selected": 5,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "public-apis/public-apis",
+        "url": "https://github.com/public-apis/public-apis",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.5872,
+        "relevance": 0.8044,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "yes",
+          "no",
+          "no yes",
+          "utm_source github",
+          "github utm_medium",
+          "utm_medium referral",
+          "referral utm_campaign"
+        ],
+        "gem_score": 0.6191
+      },
+      {
+        "name": "platformio/platformio-core",
+        "url": "https://github.com/platformio/platformio-core",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.0833,
+        "relevance": 0.82,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "utm_source github",
+          "github utm_medium",
+          "utm_medium core",
+          "core _",
+          "core",
+          "utm_source",
+          "github"
+        ],
+        "gem_score": 0.4515
+      },
+      {
+        "name": "KOSASIH/stable-pi-core",
+        "url": "https://github.com/KOSASIH/stable-pi-core",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.015,
+        "relevance": 0.8109,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "style for-the-badge",
+          "for-the-badge https",
+          "style",
+          "for-the-badge",
+          "certification https",
+          "certified",
+          "certification"
+        ],
+        "gem_score": 0.4221
+      },
+      {
+        "name": "CRPropa/CRPropa3",
+        "url": "https://github.com/CRPropa/CRPropa3",
+        "license": "GPL-3.0",
+        "role": "module (C++)",
+        "novelty_score": 0.0492,
+        "relevance": 0.7819,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "crpropa",
+          "can",
+          "##",
+          ".",
+          "documentation",
+          ". ##",
+          "can found"
+        ],
+        "gem_score": 0.3663
+      },
+      {
+        "name": "Sinuslabs/Reach",
+        "url": "https://github.com/Sinuslabs/Reach",
+        "license": "GPL-3.0",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.0103,
+        "relevance": 0.7848,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "--- ##",
+          "https",
+          "---",
+          "reach",
+          "##",
+          "reverb",
+          "sound",
+          "p align"
+        ],
+        "gem_score": 0.2938
+      }
+    ],
+    "architecture_ascii": "[1] public-apis/public-apis  →  [2] platformio/platformio-core  →  [3] KOSASIH/stable-pi-core  →  [4] CRPropa/CRPropa3  →  [5] Sinuslabs/Reach\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "ufo",
+        "aliens",
+        "extraterrestrial"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 13,
+      "probed": 13,
+      "selected": 5,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

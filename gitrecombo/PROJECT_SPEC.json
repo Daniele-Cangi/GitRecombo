@@ -1,0 +1,347 @@
+{
+  "project_name": "GitRecombo",
+  "version": "0.6.0",
+  "purpose": "Discover hidden gem GitHub repositories using AI-powered analysis",
+  
+  "what_it_does": {
+    "simple_explanation": "GitRecombo finds unknown but high-quality GitHub repositories that could be game-changers for your project. Instead of just looking at star counts, it analyzes repository health, novelty, author reputation, and semantic relevance to discover hidden gems.",
+    
+    "key_difference": "Most tools recommend popular (starred) repos. GitRecombo finds UNDERVALUED repos with <100 stars that have exceptional quality metrics but haven't been discovered yet.",
+    
+    "workflow": [
+      "1. User provides topics/interests (e.g., 'vector embeddings', 'GPU acceleration')",
+      "2. GitRecombo searches GitHub for recent repos matching those topics",
+      "3. Analyzes each repo with multiple scoring algorithms:",
+      "   - Novelty score: How fresh/active is it? (exponential decay formula)",
+      "   - Health score: Has tests? CI/CD? Good docs? Active commits?",
+      "   - Relevance score: Semantic similarity to user's goal (using embeddings)",
+      "   - Author reputation: Developer's credibility",
+      "   - Diversity bonus: Avoids conceptual duplicates",
+      "4. Combines scores into gem_score using weighted formula",
+      "5. Returns top 6 hidden gems with architectural blueprint for integration"
+    ]
+  },
+  
+  "core_components": {
+    "ultra_autonomous.py": {
+      "role": "Main entry point - orchestrates the entire discovery process",
+      "inputs": "Configuration JSON file with topics, parameters, weights",
+      "outputs": "Mission JSON with discovered repos and architectural blueprint",
+      "key_functions": ["load_config", "run_autonomous", "save_mission"]
+    },
+    
+    "discover.py": {
+      "role": "Discovery engine - GitHub API interactions and scoring algorithms",
+      "key_functions": {
+        "discover()": "Main discovery orchestrator",
+        "search_repos()": "GitHub repository search",
+        "novelty_score()": "Calculate freshness/activity metric",
+        "health_score()": "Analyze repo quality (CI, tests, releases, manifest)",
+        "author_rep()": "Calculate developer reputation from followers",
+        "build_queries()": "Generate optimized GitHub search queries"
+      },
+      "api_calls": [
+        "GitHub REST API - repository search",
+        "GitHub REST API - code search (for tests/CI detection)",
+        "GitHub REST API - user info (for author reputation)",
+        "GitHub REST API - README fetch"
+      ]
+    },
+    
+    "embeddings.py": {
+      "role": "Semantic analysis - converts text to vector embeddings",
+      "providers": {
+        "sbert": "Local embeddings using SentenceTransformers (FREE, default)",
+        "openai": "OpenAI embeddings API (PAID, optional)"
+      },
+  "default_model": "thenlper/gte-small (via SBert)",
+      "why_embeddings": "Enables semantic similarity matching - finds repos conceptually related to user's goal, not just keyword matches"
+    },
+    
+    "llm.py": {
+      "role": "LLM integration - generates project recombination blueprints",
+      "provider": "OpenAI GPT models",
+      "purpose": "Takes discovered repos and creates actionable integration plan with code examples"
+    },
+    
+    "github_search_planner.py": {
+      "role": "Rate limit manager - prevents GitHub API throttling",
+      "key_features": [
+        "Tracks API usage per endpoint (search, code_search, rest)",
+        "Implements smart wait strategies",
+        "Prevents rate limit errors"
+      ]
+    },
+    
+    "repo_cache.py": {
+      "role": "Caching layer - stores README content and processed repo markers",
+      "benefits": [
+        "Reduces API calls",
+        "Speeds up repeated searches",
+        "Tracks already-processed repos to avoid duplicates"
+      ],
+      "storage": "SQLite database (repo_cache.db)"
+    }
+  },
+  
+  "configuration": {
+    "file_format": "JSON",
+    "example_files": ["run_config_30d.json", "quick_test_config.json"],
+    
+    "required_fields": {
+      "topics": "Array of search topics (e.g., ['vector-database', 'semantic-search'])",
+      "goal": "String describing project objective",
+      "days": "Number of days to look back for repo activity",
+      "max": "Maximum repos to return per query",
+      "licenses": "Allowed licenses (e.g., ['MIT', 'Apache-2.0'])"
+    },
+    
+    "optional_fields": {
+      "explore_longtail": "Boolean - focus on repos with <100 stars (hidden gems mode)",
+      "max_stars": "Integer - upper limit for star count (for longtail discovery)",
+      "min_health": "Float 0-1 - minimum health score threshold",
+      "use_embeddings": "Boolean - enable semantic analysis (default: true)",
+      "embed_provider": "String - 'sbert' (free, local) or 'openai' (paid, API)",
+      "embedding_model": "String - model name for embeddings",
+      "require_ci": "Boolean - require CI/CD workflows",
+      "require_tests": "Boolean - require test files",
+      "probe_limit": "Integer - how many repos to analyze deeply"
+    },
+    
+    "scoring_weights": {
+      "w_novelty": "Weight for novelty score (default: 0.35)",
+      "w_health": "Weight for health score (default: 0.25)",
+      "w_relevance": "Weight for semantic relevance (default: 0.25)",
+      "w_author": "Weight for author reputation (default: 0.05)",
+      "w_diversity": "Weight for diversity bonus (default: 0.10)",
+      "note": "Weights should sum to ~1.0"
+    }
+  },
+  
+  "scoring_formulas": {
+    "gem_score": {
+      "formula": "gem_score = (w_novelty × novelty) + (w_health × health) + (w_relevance × relevance) + (w_author × author_rep) + (w_diversity × diversity_bonus)",
+      "range": "0.0 to 1.0",
+      "interpretation": "Higher = better hidden gem candidate"
+    },
+    
+    "novelty_score": {
+      "formula": "novelty = 0.55×tanh(stars/days_old/50) + 0.40×(1/(1+days_since_push)) + 0.05×tanh(forks/50) - fork_penalty",
+      "factors": [
+        "Star velocity (stars per day)",
+        "Recency (days since last push)",
+        "Fork activity",
+        "Penalty if repo is itself a fork"
+      ],
+      "range": "0.0 to 1.0"
+    },
+    
+    "health_score": {
+      "formula": "health = 0.25×has_ci + 0.25×has_tests + 0.25×has_release + 0.25×has_manifest",
+      "components": {
+        "has_ci": "Presence of .github/workflows (CI/CD)",
+        "has_tests": "Presence of test files or test directory",
+        "has_release": "Has GitHub releases",
+        "has_manifest": "Has package manifest (pyproject.toml, package.json, Cargo.toml, go.mod)"
+      },
+      "range": "0.0 to 1.0"
+    },
+    
+    "relevance_score": {
+      "formula": "relevance = cosine_similarity(repo_embedding, goal_embedding)",
+      "method": "Cosine similarity between repository text and user's goal",
+      "requires": "use_embeddings = true",
+      "range": "0.0 to 1.0"
+    },
+    
+    "author_reputation": {
+      "formula": "author_rep = min(1.0, log10(followers + 1) / 3.0)",
+      "input": "GitHub follower count",
+      "range": "0.0 to 1.0"
+    },
+    
+    "diversity_bonus": {
+      "formula": "diversity = 1.0 - avg_cosine_similarity(candidate, already_selected)",
+      "purpose": "Prevents selecting conceptually similar repos",
+      "requires": "use_embeddings = true",
+      "range": "0.0 to 1.0"
+    }
+  },
+  
+  "usage": {
+    "command_line": "python ultra_autonomous.py --config <config.json> [options]",
+    
+    "cli_options": {
+      "--config": "Path to configuration JSON file (required)",
+      "--clear-processed": "Ignore cache of previously processed repos",
+      "--no-cache": "Don't use cached README content (force fresh GitHub fetches)",
+      "--search-only": "Only search, don't generate recombination blueprint"
+    },
+    
+    "example_commands": [
+      "python ultra_autonomous.py --config run_config_30d.json",
+      "python ultra_autonomous.py --config quick_test_config.json --clear-processed --no-cache",
+      "python ultra_autonomous.py --config run_config_30d.json --search-only"
+    ]
+  },
+  
+  "output_format": {
+    "file_type": "JSON",
+    "filename_pattern": "ultra_autonomous_YYYYMMDD_HHMMSS.json",
+    
+    "structure": {
+      "title": "Mission title",
+      "summary": "Executive summary",
+      "sources": [
+        {
+          "name": "owner/repo",
+          "url": "GitHub URL",
+          "license": "License type",
+          "role": "module (language)",
+          "novelty_score": 0.0,
+          "relevance": 0.0,
+          "health_score": 0.0,
+          "author_rep": 0.0,
+          "gem_score": 0.0,
+          "concepts": ["extracted", "keywords"]
+        }
+      ],
+      "architecture_ascii": "Visual diagram of repo connections",
+      "seed_commands": ["Setup commands"],
+      "project_tree": ["Expected file structure"],
+      "why_it_works": ["Explanation of why these repos work together"],
+      "metrics": {
+        "topics": ["search topics"],
+        "days": 90,
+        "explore_longtail": true,
+        "probe_limit": 40,
+        "candidates": 150,
+        "probed": 40,
+        "selected": 6,
+        "weights": {}
+      }
+    }
+  },
+  
+  "api_requirements": {
+    "github_token": {
+      "env_var": "GITHUB_TOKEN",
+      "type": "Personal Access Token",
+      "scopes": ["public_repo", "read:user"],
+      "rate_limits": {
+        "search_api": "30 requests/minute",
+        "code_search_api": "10 requests/minute",
+        "rest_api": "5000 requests/hour"
+      }
+    },
+    
+    "openai_api_key": {
+      "env_var": "OPENAI_API_KEY",
+      "required_for": ["LLM recombination (llm.py)", "OpenAI embeddings (if embed_provider='openai')"],
+      "optional_if": "use_embeddings=true with embed_provider='sbert' and search-only mode"
+    }
+  },
+  
+  "dependencies": {
+    "python_version": ">=3.9",
+    "core_packages": [
+      "requests - GitHub API calls",
+      "python-dateutil - Date parsing",
+      "openai - OpenAI API integration",
+      "sentence-transformers - Local embeddings (SBert)",
+      "jinja2 - Template rendering",
+      "flask - API server (optional, for api/server.py)"
+    ]
+  },
+  
+  "typical_use_cases": [
+    "Find cutting-edge ML frameworks before they go viral",
+    "Discover innovative database solutions with <50 stars",
+    "Identify emerging developer tools in specific tech stacks",
+    "Competitive intelligence: what are bleeding-edge projects in your domain?",
+    "Tech scouting: find promising OSS projects for investment/partnership",
+    "Research: discover novel academic implementations on GitHub"
+  ],
+  
+  "gui_implementation_notes": {
+    "for_lovable": {
+      "goal": "Create web UI for GitRecombo that makes discovery accessible to non-technical users",
+      
+      "core_features": [
+        "1. Configuration Builder: Form to create discovery config JSON",
+        "2. Topic Input: Multi-input field for topics/interests",
+        "3. Goal Description: Textarea for user's project objective",
+        "4. Advanced Settings: Collapsible panel for weights, thresholds, longtail mode",
+        "5. Run Discovery: Button that calls ultra_autonomous.py with generated config",
+        "6. Results Display: Card-based UI showing discovered repos with scores",
+        "7. Blueprint View: Formatted display of architectural blueprint and integration steps",
+        "8. Export Options: Download results as JSON or copy to clipboard"
+      ],
+      
+      "architecture": {
+        "frontend": "React/Next.js with TypeScript",
+        "backend": "Python FastAPI or Flask (wrap ultra_autonomous.py)",
+        "api_endpoints": [
+          "POST /api/discover - Run discovery with config",
+          "GET /api/missions - List previous discoveries",
+          "GET /api/mission/:id - Get specific discovery result",
+          "GET /api/health - Check GitHub/OpenAI API status"
+        ]
+      },
+      
+      "ui_components": {
+        "TopicInput": "Tag-style input for multiple topics",
+        "ScoreVisualizer": "Progress bars or radar chart for scores",
+        "RepoCard": "Card showing repo info + scores + concepts",
+        "ConfigPanel": "Form with validation for all discovery parameters",
+        "BlueprintViewer": "Code-highlighted display of commands and architecture"
+      },
+      
+      "state_management": {
+        "config": "Current discovery configuration",
+        "results": "Latest discovery results",
+        "loading": "Discovery in progress state",
+        "api_keys": "GitHub/OpenAI credentials (never log/display in UI)"
+      },
+      
+      "key_workflows": [
+        "Quick Start: Pre-filled example config → Run → See results in <2 minutes",
+        "Custom Discovery: Build config → Adjust weights → Run → Iterate on results",
+        "Explore Results: View repos → Click to GitHub → Export blueprint → Integrate"
+      ]
+    }
+  },
+  
+  "common_issues": {
+    "rate_limit_errors": {
+      "symptom": "403 Forbidden or 'rate limit exceeded'",
+      "solutions": [
+        "Wait for rate limit reset (check X-RateLimit-Reset header)",
+        "Reduce probe_limit to analyze fewer repos",
+        "Enable caching with use_cache=true",
+        "Use --no-cache sparingly"
+      ]
+    },
+    
+    "no_results": {
+      "symptom": "Empty or very few repos returned",
+      "solutions": [
+        "Check topic spelling and relevance",
+        "Increase days parameter (search further back)",
+        "Lower min_health threshold",
+        "Disable explore_longtail if too restrictive",
+        "Check GitHub API is accessible"
+      ]
+    },
+    
+    "embedding_errors": {
+      "symptom": "Model download fails or embedding errors",
+      "solutions": [
+        "Ensure sentence-transformers is installed: pip install sentence-transformers",
+        "Check disk space (~1.3GB for model download)",
+        "Try different embedding model",
+        "Disable embeddings: use_embeddings=false"
+      ]
+    }
+  }
+}

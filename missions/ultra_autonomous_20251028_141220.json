@@ -1,0 +1,346 @@
+{
+  "timestamp": "2025-10-28T14:12:20.254351",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Design and ship a local-first PC defense agent that detects phishing attempts and intrusion activity, traces their provenance, and reacts in real time—while remaining transparent and reproducible. The system combines a Dioxus (Rust) security console, optional deep integration with the niri Wayland compositor to quarantine suspicious windows, Earthly-driven reproducible builds across OSes, D2-generated incident graphs for human clarity, and a lightweight NeDB-backed IOC microservice. Light ML: a compact Rust Naive Bayes + logistic-regression hybrid that scores phishing emails/URLs and anomalous login bursts from simple features (domain traits, header hops, timing deltas). Success: <200 ms UI latency, quarantine within 300 ms on Wayland, >90% phishing recall at <5% false-positive on a curated local corpus, and deterministic builds via Earthly. Why it matters: it fuses the window/compositor plane with detection, translates noisy logs into crisp diagrams, and stays auditable end-to-end.",
+  "repository_synergy": "THE INSIGHT: Treat the desktop UI and window manager as part of the security control plane. Almost no endpoint tools leverage the compositor’s power to contain risk in real time. By using Dioxus for a native Rust control surface and niri (a modern Wayland tiling compositor) as an enforcement shim, we get a responsive human interface that can actively herd suspicious apps into quarantine workspaces. Add Earthly to make this entire pipeline reproducible and verifiable across platforms, D2 to render incidents as self-explanatory diagrams, and NeDB to capture indicators-of-compromise (IOCs) with lightweight persistence. The aha moment: the same primitives that tile windows can enforce soft-containment, while the same diagram DSL that architects use can make threat paths instantly legible.\n\nWHY THESE REPOS: Dioxus gives us a fast, multiplatform Rust UI without dragging in a heavy browser runtime, ideal for a local-first security console. niri, as a Wayland compositor with scrollable tiling and robust window management, uniquely doubles as a real-time policy actuator on Linux: redirect suspicious windows, defocus, or move to a sandbox workspace. Earthly’s deterministic build graph ensures the agent and its tiny ML stay supply-chain-auditable, reproducible across Rust/Go/Node subcomponents. D2 turns log spaghetti into coherent threat maps (rendered to SVG/PNG) that even a non-expert can trust at a glance. NeDB provides a simple embedded store for IOCs and evidence snapshots without introducing a heavyweight database.\n\nTHE SYNERGY: Each component shores up a different trust gap. Dioxus is the transparent cockpit; niri is the steering linkage into the desktop; Earthly is the integrity layer that proves what you’re running; D2 is the narrative that turns detection into understanding; NeDB is the fast, zero-admin notepad for artifacts. Together, they create a loop: detect → visualize → decide → enforce → learn. D2 diagrams are not just pretty pictures—they become clickable assets in Dioxus, backed by NeDB entries and linked to niri actions (jump to quarantine workspace, kill, or detach). Earthly keeps all this consistent across dev, CI, and deployment so a user can validate builds, a rarity in security tools.\n\nTHE INNOVATION: Unifying the compositor with the security model is unconventional. Most endpoint tools ignore the UI plane and can only alert; here we can move suspect windows in milliseconds, interrupting malicious flows (e.g., fake login dialogs, credential-stealing pop-ups) without terminating processes prematurely. Meanwhile, lightweight ML runs entirely on-device, and D2 elevates the human factor with incident graphs auto-generated from raw headers, IPs, and process ancestry. The bridge is a simple, auditable IPC flow: Rust agent publishes events → NeDB stores IOCs → D2 generator produces diagrams → Dioxus displays and offers actions → niri applies containment where possible. It’s minimal, understandable, and powerful.",
+  "technical_architecture": "Core components and data flow:\n\n- Rust Agent (sentinel-core)\n  - Responsibilities: log ingestion (journald on Linux, Event Log on Windows, unified text logs), phishing analyzer (email/URL parsing), login anomaly detector, and provenance tracer (parse Received headers, extract IPs, reverse DNS).\n  - Light ML: hybrid model\n    - Naive Bayes on tokenized email subject/body and URL features (TLD rarity, punycode flags, number of redirects, presence of confusable Unicode).\n    - A tiny logistic regression on header-derived features (hop count variance, SPF/DKIM presence flags, domain similarity to known brands via Jaro distance) and timing features (burst rate of login failures).\n    - Training: online updates from user-labelled incidents; model serialized as a few kilobytes of weights in TOML/JSON.\n  - Outputs: normalized events in a compact schema (timestamp, type, severity, features, linked IOCs), published over localhost HTTP and Server-Sent Events (SSE).\n\n- IOC Store (ioc-db)\n  - Implementation: Node.js microservice embedding NeDB.\n  - API:\n    - POST /ioc { type, key, meta } → upsert with indexes on key and type\n    - GET /ioc?type=domain|ip|filehash\n    - POST /incident { eventIds[], labels[], verdict }\n  - Rationale: zero-admin, file-backed, perfect for local-first artifacts and quick queries.\n\n- Diagram Generator (d2-graph)\n  - Implementation: tiny Go or Rust wrapper that composes D2 graph files from incidents, then invokes the D2 CLI to render SVG/PNG.\n  - Schema: nodes for emails, IPs, domains, processes, windows; edges for relationships (phish→click→process→window→network).\n  - Interface: POST /graph { incidentId } → returns SVG path; Dioxus loads SVG directly.\n\n- Security Console (Dioxus UI)\n  - Cross-platform native UI in Rust.\n  - Shows live events (SSE), severity badges, and a one-click \"trace and quarantine\" action.\n  - Renders SVGs from D2, overlays controls (highlight node, open IOC detail from NeDB).\n  - Offers training feedback: \"Mark as phish/not phish\" updates the model via sentinel-core.\n\n- niri Integration (optional, Linux/Wayland)\n  - Mode A (non-invasive): a companion utility uses niri’s window metadata patterns and external controls (via niri’s configuration and restartless reload if available) to define a quarantine workspace; sentinel-core publishes a rule (match class/title) → niri utility moves the window immediately. If IPC is limited, a thin patch or wrapper can monitor Wayland events using niri’s internal patterns, but shipped as a separate process to keep GPL-3 boundaries clean.\n  - Enforcement actions: move to \"Quarantine\" workspace, remove focus-stealing, reduce opacity, desaturate, or overlay a warning border (visual containment without killing the process).\n\n- Earthly Build Orchestration\n  - Earthfile targets:\n    - +agent: compile Rust (musl for static Linux), run tests, produce checksummed artifacts.\n    - +iocdb: build Node service with pinned versions, produce a single tarball.\n    - +d2graph: fetch exact D2 version, build wrapper, render test diagram.\n    - +ui: bundle Dioxus desktop app and static assets.\n    - +release: assemble all components into OS-specific bundles.\n  - Benefit: deterministic, cacheable builds; easy to audit and reproduce.\n\nKey technical challenges and solutions:\n- Real-time performance: journald subscriptions and ring-buffered parsers; zero-copy slices for email/URL classification; bounded queues with backpressure. Goal: under 50 ms from event to score; under 300 ms to niri enforcement.\n- Cross-license composability: ship niri integration as a separate companion binary/process, interacting via config/IPC to respect GPL-3 without contaminating Apache/MIT components.\n- Feature extraction correctness: strict parsers for email headers and punycode; built-in tests covering RFC edge cases; domain normalization before similarity metrics.\n- False positives: dual-threshold policy—silent observe at low confidence; enforce quarantine only above a high threshold unless user confirms via Dioxus.\n- Security of IPC: bind HTTP APIs to localhost only, random capability tokens per boot, and file permissions on NeDB storage; optional user-space TLS if desired.\n\nIntegration patterns that showcase synergy:\n- Event-to-graph loop: sentinel-core emits event → ioc-db stores indicators → d2-graph renders updated SVG → Dioxus hot-reloads the diagram so the operator sees the attack path grow live.\n- Action-to-compositor loop: operator clicks \"Quarantine window\" on a D2 node → Dioxus issues POST /enforce → niri companion applies workspace move, immediately reflecting on-screen.\n- Learning loop: user marks verdict; sentinel-core updates tiny model weights and persists them via Earthly-verified artifact location, keeping behavior auditable.",
+  "expected_impact": "Use cases:\n1) Email drop-in detection: A suspicious .eml in Downloads triggers the agent; headers parsed, Naive Bayes flags high risk, D2 graph shows sender→relay IP→local mail client. With one click, quarantine the mail client window via niri and open a safe viewer.\n2) Fake login pop-up: A browser window with a login-looking title appears; the URL contains punycode and tracker parameters. The agent scores it as risky; niri moves the window to the Quarantine workspace and overlays a warning border. User can still inspect but cannot accidentally paste passwords.\n3) SSH brute patterns: Repeated failed logins spike over 60 seconds. Logistic model exceeds anomaly threshold; D2 graph links remote IP ranges to system auth entries, and NeDB stores the offending IPs for quick blocking (manually or via external firewall scripts if the user chooses).\n4) Document lure chain: Clicking a PDF spawns a helper process which reaches out over the network. The agent creates a node chain (PDF→reader→child process→connection), making invisible hops visible to the user.\n5) Link triage workspace: Operator opens an email with multiple links; Dioxus launches a dedicated \"triage\" workspace via niri, automatically segregating all windows spawned by that email until verdict.\n6) Training-by-using: The user marks a borderline email as benign; future similar emails get lower risk. Conversely, marking a phish raises weights—no cloud needed, no extra frameworks.\n7) Incident reports: With one click, export a D2-rendered SVG plus the NeDB IOC bundle to share with IT without exposing the entire system logs.\n\nScalability and extensibility:\n- Components are loosely coupled via localhost APIs; each can be swapped or scaled independently.\n- Earthly makes multi-OS releases trivial, helping propagate updates safely.\n- D2 graphs remain simple text assets; future templates can add MITRE ATT&CK overlays without changing the engine.\n\nLimitations and mitigations:\n- niri integration is Linux/Wayland-only; on Windows/macOS, fall back to observe-and-alert without compositor enforcement.\n- NeDB is not a high-throughput database; acceptable for local IOC storage. For heavy use, add sharding by incident or rotate files, still within the ioc-db service.\n- Light ML won’t catch advanced attacks; compensate with transparent rules, user feedback loops, and conservative enforcement thresholds.\n- Email header tracing depends on available metadata; when partial, present confidence bands in D2 instead of asserting certainty.",
+  "innovation_analysis": "Innovation score: 8.5/10. The core leap is elevating the compositor (niri) to an enforcement plane, fusing UI/UX with security in a precise, low-latency way, and narrating incidents with D2 so non-experts can investigate confidently—all while keeping builds reproducible with Earthly and data local with NeDB.\n\nImmediate next steps:\n- Implement sentinel-core event model, journald tailer, and URL/email feature extractors.\n- Build the tiny ML (Naive Bayes + logistic regression) with persistence and feedback updates.\n- Stand up ioc-db (NeDB) with simple indexing and tests.\n- Create d2-graph microservice and wire SVG rendering into Dioxus.\n- Prototype niri companion: define quarantine workspace and a rule application endpoint.\n- Add Earthfile targets and lock toolchain versions.\n\nKey metrics:\n- Event-to-UI latency; time-to-quarantine; phishing recall/precision on a local corpus; user feedback adoption rate; reproducible build verification time.\n\nEssential tools/frameworks:\n- Dioxus (UI), niri (Wayland integration), Earthly (build), D2 (diagram CLI), NeDB (IOC store), Rust/Go/Node runtimes for the respective services.",
+  "sources": [
+    {
+      "name": "DioxusLabs/dioxus",
+      "url": "https://github.com/DioxusLabs/dioxus",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<p>\n    <p align=\"center\" >\n      <!-- <img src=\"./notes/header-light-updated.svg#gh-light-mode-only\" >\n      <img src=\"./notes/header-dark-updated.svg#gh-dark-mode-only\" > -->\n      <!-- <a href=\"https://dioxuslabs.com\">\n          <img src=\"./notes/flat-splash.avif\">\n      </a> -->\n      <img src=\"./notes/splash-header-darkmode.svg#gh-dark-mode-only\" style=\"width: 80%; height: auto;\">\n      <img src=\"./notes/splash-header.svg#gh-light-mode-only\" style=\"width: 80%; height: auto;\">\n      <img src=\"./notes/image-splash.avif\">\n      <br>\n    </p>\n</p>\n<div align=\"center\">\n  <!-- Crates version -->\n  <a href=\"https://crates.io/crates/dioxus\">\n    <img src=\"https://img.shields.io/crates/v/dioxus.svg?style=flat-square\"\n    alt=\"Crates.io version\" />\n  </a>\n  <!-- Downloads -->\n  <a href=\"https://crates.io/crates/dioxus\">\n    <img src=\"https://img.shields.io/crates/d/dioxus.svg?style=flat-square\"\n      alt=\"Download\" />\n  </a>\n  <!-- docs -->\n  <a href=\"https://docs.rs/dioxus\">\n    <img src=\"https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square\"\n      alt=\"docs.rs docs\" />\n  </a>\n  <!-- CI -->\n  <a href=\"https://github.com/jkelleyrtp/dioxus/actions\">\n    <img src=\"https://github.com/dioxuslabs/dioxus/actions/workflows/main.yml/badge.svg\"\n      alt=\"CI status\" />\n  </a>\n\n  <!--Awesome -->\n  <a href=\"https://dioxuslabs.com/awesome\">\n    <img src=\"https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg\" alt=\"Awesome Page\" />\n  </a>\n  <!-- Discord -->\n  <a href=\"https://discord.gg/XgGxMSkvUM\">\n    <img src=\"https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square\" alt=\"Discord Link\" />\n  </a>\n</div>\n\n<div align=\"center\">\n  <h3>\n    <a href=\"https://dioxuslabs.com\"> Website </a>\n    <span> | </span>\n    <a href=\"https://github.com/DioxusLabs/dioxus/tree/main/examples\"> Examples </a>\n    <span> | </span>\n    <a href=\"https://dioxuslabs.com/learn/0.6/guide\"> Guide </a>\n    <span> | </span>\n    ",
+      "scores": {
+        "novelty": 0.5408,
+        "health": 0.75,
+        "relevance": 0.8128,
+        "author_rep": 0.0,
+        "gem_score": 0.73
+      },
+      "concepts": [
+        "https",
+        "img src",
+        "href https",
+        "src",
+        "img",
+        "align center",
+        "--",
+        "div align"
+      ]
+    },
+    {
+      "name": "YaLTeR/niri",
+      "url": "https://github.com/YaLTeR/niri",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<h1 align=\"center\"><img alt=\"niri\" src=\"https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0\"></h1>\n<p align=\"center\">A scrollable-tiling Wayland compositor.</p>\n<p align=\"center\">\n    <a href=\"https://matrix.to/#/#niri:matrix.org\"><img alt=\"Matrix\" src=\"https://img.shields.io/badge/matrix-%23niri-blue?logo=matrix\"></a>\n    <a href=\"https://github.com/YaLTeR/niri/blob/main/LICENSE\"><img alt=\"GitHub License\" src=\"https://img.shields.io/github/license/YaLTeR/niri\"></a>\n    <a href=\"https://github.com/YaLTeR/niri/releases\"><img alt=\"GitHub Release\" src=\"https://img.shields.io/github/v/release/YaLTeR/niri?logo=github\"></a>\n</p>\n\n<p align=\"center\">\n    <a href=\"https://yalter.github.io/niri/Getting-Started.html\">Getting Started</a> | <a href=\"https://yalter.github.io/niri/Configuration%3A-Introduction.html\">Configuration</a> | <a href=\"https://github.com/YaLTeR/niri/discussions/325\">Setup&nbsp;Showcase</a>\n</p>\n\n![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)\n\n## About\n\nWindows are arranged in columns on an infinite strip going to the right.\nOpening a new window never causes existing windows to resize.\n\nEvery monitor has its own separate window strip.\nWindows can never \"overflow\" onto an adjacent monitor.\n\nWorkspaces are dynamic and arranged vertically.\nEvery monitor has an independent set of workspaces, and there's always one empty workspace present all the way down.\n\nThe workspace arrangement is preserved across disconnecting and connecting monitors where it makes sense.\nWhen a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.\n\n## Features\n\n- Built from the ground up for scrollable tiling\n- [Dynamic workspaces](https://yalter.github.io/niri/Workspaces.html) like in GNOME\n- An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and w",
+      "scores": {
+        "novelty": 0.3574,
+        "health": 0.75,
+        "relevance": 0.7966,
+        "author_rep": 0.0,
+        "gem_score": 0.5408
+      },
+      "concepts": [
+        "https",
+        "-",
+        "niri",
+        "scrollable tiling",
+        "href https",
+        "tiling top",
+        "windows",
+        "##"
+      ]
+    },
+    {
+      "name": "earthly/earthly",
+      "url": "https://github.com/earthly/earthly",
+      "description": "",
+      "language": "module",
+      "license": "MPL-2.0",
+      "readme_snippet": "<h1>Earthly</h1>\n\n**Please note that Earthly is no longer actively maintained.** [Read more](https://earthly.dev/blog/shutting-down-earthfiles-cloud).\n\n<div align=\"center\">\n  <a href=\"https://earthly.dev\"><img src=\"img/logo-banner-white-bg.png\" alt=\"Earthly\" width=\"700px\" /></a>\n  <br/>\n  <em>It’s like Docker for builds</em>\n</div>\n<br/>\n\n[![GitHub Actions CI](https://github.com/earthly/earthly/workflows/staging%20release/badge.svg)](https://github.com/earthly/earthly/actions?query=workflow%3A%22staging%20release%22+branch%3Amain)\n[![Join the chat on Slack](https://img.shields.io/badge/slack-join%20chat-red.svg)](https://earthly.dev/slack)\n[![Docs](https://img.shields.io/badge/docs-git%20book-blue)](https://docs.earthly.dev)\n[![Website](https://img.shields.io/badge/website-earthly.dev-blue)](https://earthly.dev)\n[![Install Earthly](https://img.shields.io/github/v/release/earthly/earthly.svg?label=install&color=1f626c)](https://earthly.dev/get-earthly)\n[![Docker Hub](https://img.shields.io/badge/docker%20hub-earthly-blue)](https://hub.docker.com/u/earthly)\n[![License MPL-2](https://img.shields.io/badge/license-MPL-blue.svg)](./LICENSE)\n\n[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=246903803)\n\n**🔁 Repeatable Builds** - *Write builds once, and run them anywhere – on your laptop, remote, and in any CI.*\n\n**❤️ Super Simple** - *Instantly recognizable syntax – like Dockerfile and Makefile had a baby.*\n\n**🛠 Compatible with Every Language, Framework, and Build Tool** - *If it runs on Linux, it runs on Earthly.*\n\n**🏘 Great for Monorepos and Polyrepos** - *Organize your build logic however makes the most sense for your project.*\n\n**💨 Fast Builds** - *Build caching and parallel execution makes builds fast automatically.*\n\n**♻️ Reuse, Don't Repeat** - *Never write the same code in multiple builds again.*\n\n---------------------------------\n\n🌎 [Earthly](https://earthly.dev/) is a vers",
+      "scores": {
+        "novelty": 0.1836,
+        "health": 1.0,
+        "relevance": 0.7986,
+        "author_rep": 0.0,
+        "gem_score": 0.5391
+      },
+      "concepts": [
+        "earthly",
+        "build",
+        "https",
+        "builds",
+        "align center",
+        "runs",
+        "align",
+        "center"
+      ]
+    },
+    {
+      "name": "terrastruct/d2",
+      "url": "https://github.com/terrastruct/d2",
+      "description": "",
+      "language": "module",
+      "license": "MPL-2.0",
+      "readme_snippet": "<div align=\"center\">\n  <img src=\"./docs/assets/banner.png\" alt=\"D2\" />\n  <h2>\n    A modern diagram scripting language that turns text to diagrams.\n  </h2>\n\n[Docs](https://d2lang.com) | [Cheat sheet](./docs/assets/cheat_sheet.pdf) | [Comparisons](https://text-to-diagram.com) | [Playground](https://play.d2lang.com) | [IDE](https://d2studio.ai)\n\n[![ci](https://github.com/terrastruct/d2/actions/workflows/ci.yml/badge.svg)](https://github.com/terrastruct/d2/actions/workflows/ci.yml)\n[![daily](https://github.com/terrastruct/d2/actions/workflows/daily.yml/badge.svg)](https://github.com/terrastruct/d2/actions/workflows/daily.yml)\n[![release](https://img.shields.io/github/v/release/terrastruct/d2)](https://github.com/terrastruct/d2/releases)\n[![changelog](https://img.shields.io/badge/changelog-read-blue)](./CHANGELOG.md)\n[![npm version](https://img.shields.io/npm/v/@terrastruct/d2)](https://www.npmjs.com/package/@terrastruct/d2)\n[![discord](https://img.shields.io/discord/1039184639652265985?label=discord)](https://discord.gg/NF6X8K4eDq)\n[![twitter](https://img.shields.io/twitter/follow/terrastruct?style=social)](https://twitter.com/terrastruct)\n[![license](https://img.shields.io/github/license/terrastruct/d2?color=9cf)](./LICENSE.txt)\n\n<a href=\"https://play.d2lang.com\">\n<img src=\"./docs/assets/playground_button.png\" alt=\"D2 Playground button\" width=\"200\" />\n</a>\n<a href=\"https://d2studio.ai\">\n<img src=\"./docs/assets/studio_button.png\" alt=\"D2 Studio button\" width=\"200\" />\n</a>\n\nhttps://user-images.githubusercontent.com/3120367/206125010-bd1fea8e-248a-43e7-8f85-0bbfca0c6e2a.mp4\n\n</div>\n\n# Table of Contents\n\n<!-- toc -->\n- [What does D2 look like?](#what-does-d2-look-like)\n- [Quickstart](#quickstart)\n- [Install](#install)\n- [D2 as a library](#d2-as-a-library)\n- [Themes](#themes)\n- [Fonts](#fonts)\n- [Export file types](#export-file-types)\n- [Language tooling](#language-tooling)\n- [Plugins](#plugins)\n- [Comparison](#comparison)\n- [Contributing](#contributing)\n- [License](#licens",
+      "scores": {
+        "novelty": 0.2807,
+        "health": 0.75,
+        "relevance": 0.7868,
+        "author_rep": 0.0,
+        "gem_score": 0.5108
+      },
+      "concepts": [
+        "-",
+        "https",
+        "d2",
+        "install",
+        "##",
+        "see",
+        ". ##",
+        "."
+      ]
+    },
+    {
+      "name": "louischatriot/nedb",
+      "url": "https://github.com/louischatriot/nedb",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<img src=\"http://i.imgur.com/9O1xHFb.png\" style=\"width: 25%; height: 25%; float: left;\">\n\n## The JavaScript Database\n\n> :warning: :warning: :warning: **WARNING:** this library is no longer maintained, and may have bugs and security issues. Feel free to fork but no pull request or security alert will be answered.\n\n\n**Embedded persistent or in memory database for Node.js, nw.js, Electron and browsers, 100% JavaScript, no binary dependency**. API is a subset of MongoDB's and it's <a href=\"#speed\">plenty fast</a>.\n\n**IMPORTANT NOTE**: Please don't submit issues for questions regarding your code. Only actual bugs or feature requests will be answered, all others will be closed without comment. Also, please follow the <a href=\"#bug-reporting-guidelines\">bug reporting guidelines</a> and check the <a href=\"https://github.com/louischatriot/nedb/wiki/Change-log\" target=\"_blank\">change log</a> before submitting an already fixed bug :)\n\n\n## Installation, tests\nModule name on npm and bower is `nedb`.\n\n```\nnpm install nedb --save    # Put latest version in your package.json\nnpm test                   # You'll need the dev dependencies to launch tests\nbower install nedb         # For the browser versions, which will be in browser-version/out\n```\n\n## API\nIt is a subset of MongoDB's API (the most used operations).\n\n* <a href=\"#creatingloading-a-database\">Creating/loading a database</a>\n* <a href=\"#persistence\">Persistence</a>\n* <a href=\"#inserting-documents\">Inserting documents</a>\n* <a href=\"#finding-documents\">Finding documents</a>\n  * <a href=\"#basic-querying\">Basic Querying</a>\n  * <a href=\"#operators-lt-lte-gt-gte-in-nin-ne-exists-regex\">Operators ($lt, $lte, $gt, $gte, $in, $nin, $ne, $exists, $regex)</a>\n  * <a href=\"#array-fields\">Array fields</a>\n  * <a href=\"#logical-operators-or-and-not-where\">Logical operators $or, $and, $not, $where</a>\n  * <a href=\"#sorting-and-paginating\">Sorting and paginating</a>\n  * <a href=\"#projections\">Projections</a>\n* <a href=\"#counting-documen",
+      "scores": {
+        "novelty": 0.085,
+        "health": 0.25,
+        "relevance": 0.7847,
+        "author_rep": 0.0,
+        "gem_score": 0.3174
+      },
+      "concepts": [
+        "/a href",
+        "datastore",
+        "will",
+        "href",
+        "/a",
+        "nedb",
+        ".",
+        "if"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "pishing",
+      "satellite"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC. Include a light machine learning",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "pishing",
+      "satellite"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 14,
+    "probed": 14,
+    "selected": 5,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "DioxusLabs/dioxus",
+        "url": "https://github.com/DioxusLabs/dioxus",
+        "license": "Apache-2.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.5408,
+        "relevance": 0.8128,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "img src",
+          "href https",
+          "src",
+          "img",
+          "align center",
+          "--",
+          "div align"
+        ],
+        "gem_score": 0.73
+      },
+      {
+        "name": "YaLTeR/niri",
+        "url": "https://github.com/YaLTeR/niri",
+        "license": "GPL-3.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.3574,
+        "relevance": 0.7966,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "niri",
+          "scrollable tiling",
+          "href https",
+          "tiling top",
+          "windows",
+          "##"
+        ],
+        "gem_score": 0.5408
+      },
+      {
+        "name": "earthly/earthly",
+        "url": "https://github.com/earthly/earthly",
+        "license": "MPL-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.1836,
+        "relevance": 0.7986,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "earthly",
+          "build",
+          "https",
+          "builds",
+          "align center",
+          "runs",
+          "align",
+          "center"
+        ],
+        "gem_score": 0.5391
+      },
+      {
+        "name": "terrastruct/d2",
+        "url": "https://github.com/terrastruct/d2",
+        "license": "MPL-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.2807,
+        "relevance": 0.7868,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "d2",
+          "install",
+          "##",
+          "see",
+          ". ##",
+          "."
+        ],
+        "gem_score": 0.5108
+      },
+      {
+        "name": "louischatriot/nedb",
+        "url": "https://github.com/louischatriot/nedb",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.085,
+        "relevance": 0.7847,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "/a href",
+          "datastore",
+          "will",
+          "href",
+          "/a",
+          "nedb",
+          ".",
+          "if"
+        ],
+        "gem_score": 0.3174
+      }
+    ],
+    "architecture_ascii": "[1] DioxusLabs/dioxus  →  [2] YaLTeR/niri  →  [3] earthly/earthly  →  [4] terrastruct/d2  →  [5] louischatriot/nedb\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "pishing",
+        "satellite"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 14,
+      "probed": 14,
+      "selected": 5,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

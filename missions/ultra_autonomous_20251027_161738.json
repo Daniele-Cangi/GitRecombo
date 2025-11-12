@@ -1,0 +1,944 @@
+{
+  "timestamp": "2025-10-27T16:17:38.075298",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a Cross‑World Agent Harness that treats GUIs, terminals, web apps, and physics simulators as one unified “embodied environment,” controllable via the same policy and orchestrated through Model Context Protocol (MCP). Concretely: an MCP server mesh coordinating Genesis (physics) + SeleniumBase (DOM/UI) + egui (native GUI) + Microsoft Terminal (CLI panes) + exo (multi‑device runners), with a Universal Action‑Observation Graph and adapters that map mouse/keyboard/DOM events to robot end‑effector actions and back. Success = a single policy (DAgger + BC, then DreamerV3 fine‑tuning) completes end‑to‑end tasks across three modalities (robotic pick‑and‑place, web form flow, CLI workflow) with ≥85% success and ≤1.2× real‑time latency, bundling reproducible runs via pear‑desktop and video highlights via lossless‑cut. This matters because it collapses fragmented test/automation stacks into one agentic substrate—usable for CI, QA, and embodied AI—making complex, cross‑surface automation reliably portable and verifiable.",
+  "repository_synergy": "THE INSIGHT: UI automation and embodied robotics are the same problem in disguise—partial observability, noisy control, event timing, and reward shaping—just with different physics: DOM has layout/render physics; a terminal has pacing/echo physics; Genesis has rigid‑body physics. If we normalize these into a Universal Action‑Observation Graph (UAOG), one policy can traverse all three. That unlocks cross‑modality generalization previously siloed across QA tools and robot simulators. MCP becomes the lingua franca to route agent actions to whichever “world” is active.\n\nTHE STORY: modelcontextprotocol/servers gives us a clean control plane—expose tools as streaming MCP servers that LLMs and agents can invoke. Genesis-Embodied-AI/Genesis provides a rich physics sandbox with headless rendering, perfect for action‑latency benchmarking and curriculum generation. emilk/egui offers a native, immediate‑mode GUI we can compile to desktop or WebAssembly—a controllable, low‑latency target app to validate our GUI adapters without the variability of a browser. seleniumbase/SeleniumBase is our DOM manipulator and observer; with a thin UAOG adapter, pointer/key/DOM are first‑class actions. microsoft/terminal is the multiplexed terminal substrate—give the agent a CLI “world” with multiple panes as spatial anchors. exo-explore/exo coordinates multi‑device, multi‑GPU runs, distributing rollouts across worlds. harness/harness supplies pipeline semantics to package and trigger end‑to‑end experiments via simple DAGs. pear-devs/pear-desktop becomes the P2P artifact carrier—bundle environments, traces, policies, and highlight videos to share reproducibility offline. mifi/lossless-cut is creatively repurposed as a headless highlight extractor for long rollouts—auto‑cuts by reward spikes or anomaly flags. codelucas/newspaper seeds real‑world scenario generators—scrape checkout flows or form patterns that synthesize adversarial web tasks. jeecgboot/JeecgBoot spins disposable enterprise apps with predictable entities—great for repeatable, complex UI workflows. vadimdemedes/ink renders a live orchestrator CLI with rich real‑time dashboards inside Terminal. veggiemonk/awesome-docker, avelino/awesome-go, vuejs/awesome-vue, vsouza/awesome-ios together are our long‑tail target corpus—programmatically pick representative apps/libs to diversify tasks. auchenberg/volkswagen is flipped: not to cheat CI, but to inject “cheat detection” tasks that probe whether policies overfit telemetry.\n\nTHE SYNERGY: By forcing every surface (physics, DOM, GUI, terminal) through the same action bus and timestamped observation schema, we can share data, curriculum, and even policies. A DOM click becomes a 2D end‑effector move with dwell time; a terminal keystroke is a precise torque impulse on the TTY state machine. Genesis gives us pretraining of state‑estimation and control that transfer to GUI timing and hover stability; SeleniumBase’s DOM diffs fuel reward design that in turn accelerates manipulation curricula in Genesis via shaped rewards.\n\nTHE INNOVATION: Cross‑world curriculum: train hovering stability in Genesis, then apply to pixel‑perfect button selection in egui and web, reducing flakiness. Unified regression artifacts: one bundle contains rollouts from robot, web, and CLI with synchronized timelines; lossless‑cut auto‑extracts comparable segments for triage. The illicit bridge is treating DOM/terminal timing as physics—making classical RL control tricks (PID‑like smoothing, action‑repeat, domain randomization) immediately useful for flaky UI automation. MCP is the switchboard that lets an LLM strategize, while the policy executes low‑level control across any world.\n\nTHE BRIDGE: UAOG adapters are the contraband glue: DOM2Physics (SeleniumBase → pointer dynamics), TTY2Dynamics (Terminal → keystroke dynamics), EGUI2Genesis (egui widget constraints → collision‑like hit‑tests). volkswagen becomes the canary—injects misleading “pass” cues (green badges, CI env vars) to verify the agent relies on ground truth outcomes, not superficial telemetry. JeecgBoot provides ever‑fresh enterprise graphs that stress data‑consistency and multi‑step business logic—exactly the hard part typical web QA avoids, but our cross‑world agent can master. The result: a single, portable agentic harness for everything from robotic pick‑and‑place to SAP‑like workflows, shareable as P2P bundles.",
+  "technical_architecture": "Core components and data flow:\n\n- UAOG (Universal Action‑Observation Graph):\n  - Action schema: {type: pointer|key|dom|tty|effector, target: selector|xy|pane|link_pose, params: {...}, ts_ns}.\n  - Observation schema: {rgb: optional, dom_tree_hash, egui_tree, tty_buf, proprio: Genesis state, layout_boxes, focus_chain, ts_ns}.\n  - Transport: gRPC over Unix sockets for low‑latency local; WebSocket for remote; capped at 120 Hz action application with action‑repeat (k=2..4) to smooth spiky policies.\n\n- MCP Orchestrator:\n  - Tools: genesis.run(env_spec), selenium.play(flow_spec), egui.app.spawn(bin|wasm), terminal.panes(config), exo.schedule(job), harness.pipeline(dag), lossless.cut(file, cues), pear.bundle(path), newspaper.scrape(url|query), jeecgboot.scaffold(schema), volkswagen.inject(profile).\n  - Session graph: A plan (from LLM or human) resolved into a DAG of tool calls with streaming tokens for observations.\n\n- World adapters:\n  - DOM2Physics: Wrap SeleniumBase; every action is applied as pointer trajectory with velocity/acceleration constraints; DOM snapshots produce layout_boxes with z‑order and hover thresholds. Anti‑flakiness: oversample near edges; friction model for scroll.\n  - EGUI2Genesis: Mirror widget bounds to virtual obstacles; pointer→contact mapping; leverage egui immediate‑mode state to detect intent vs accidental hover.\n  - TTY2Dynamics: Terminal pane as discrete time dynamics; keystroke debouncing, echo delay model; pane coordinates act as spatial anchors for an attention policy.\n  - Genesis: Headless at 240 Hz sim; render 30/60 fps; curriculum randomization (lighting, texture) mirrored to UI (DOM font/contrast randomization) to encourage invariance.\n\n- Policy and learning:\n  - Stage 1: Behavior Cloning + DAgger from scripted experts (SeleniumBase for DOM, Harness pipelines for CLI, Genesis scripted controllers).\n  - Stage 2: DreamerV3 fine‑tuning unified across worlds via shared latent world model; domain tags gating slight final layers per world (adapter heads).\n  - Reward shaping: DOM goal achieved (XPath/ARIA), CLI state diff (pane regex), Genesis task success. Uniform time penalties; smoothness bonuses.\n\n- Execution and scaling:\n  - exo schedules concurrent rollouts across hosts/GPUs (Genesis training, parallel Selenium browsers with xvfb, egui native app instances).\n  - harness orchestrates end‑to‑end DAGs: scaffold apps (JeecgBoot), deploy containers (awesome-docker images), run policies, collect artifacts.\n  - microsoft/terminal hosts orchestrator panes: Ink CLI dashboard, live logs, UAOG scope, preview video.\n\n- Observability and artifacts:\n  - Synchronized trace bus (nanosecond timestamps). Record raw observations, actions, rewards, DOM/egui trees.\n  - Video: compositor assembles split‑view (world + cursor heatmap + DOM overlays). mifi/lossless-cut runs headless with cue sheets derived from reward spikes/anomalies to extract 10–30s highlights.\n  - Packaging: pear‑desktop bundles the entire run: containers, seeds, traces, model snapshot, highlight reels; P2P seed for offline sharing.\n\n- Scenario generation:\n  - codelucas/newspaper scrapes real workflows (e.g., checkout forms) to synthesize DOM targets.\n  - jeecgboot scaffolds CRUD+workflow apps with synthetic data; actions become multi‑step business sequences.\n  - awesome‑{docker,go,vue,ios} curated lists provide long‑tail targets—random sampling for robustness sweeps.\n  - auchenberg/volkswagen inject tasks that present deceptive pass signals; regression if policy relies on them.\n\nKey challenges and solutions:\n- Timebase alignment across worlds: global ts_ns and action‑repeat; world‑specific latency compensation via Kalman filter on cursor/echo.\n- Flakiness: physics‑inspired smoothing on pointer and TTY; edge oversampling; DOM hover hysteresis.\n- Performance: zero‑copy frame sharing via shared memory for local render; WebGPU for egui WASM; xvfb tuned to 60 fps; Genesis headless to maximize sim FPS.\n- API granularity: MCP tool calls are coarse (start/stop), UAOG is fine‑grained streaming over gRPC for low‑latency control.\n- Licensing: isolate GPL lossless‑cut into optional service; artifacts tagged; replacement via FFmpeg possible.",
+  "expected_impact": "Use cases uniquely enabled by this cross‑world harness:\n\n1) Flake‑proof Web Checkout Replays: Train a policy on Genesis hover stability; transfer to SeleniumBase to click pixel‑tight DOM elements under randomized fonts/contrast. Cuts regression triage videos with cursor heat maps, bundled via pear for offline QA sign‑off.\n\n2) Terminal‑Backed Ops Playbooks: Define a pipeline that opens three terminal panes (logs, kubectl, editor). The agent executes incident playbooks end‑to‑end, with TTY2Dynamics handling echo delays. Ink dashboard shows live intent; volkswagen injects fake “all green” banners to ensure reliance on log content, not color.\n\n3) Enterprise CRUD Workflows at Scale: JeecgBoot spins a fresh HR or inventory app; the agent completes multi‑screen workflows, verifying data consistency across list/detail/report views. Seeds and bundles make failures 100% reproducible across teams.\n\n4) Cross‑Modal Skill Distillation: Teach precise drag‑and‑drop in Genesis; distill to egui and web drag behaviors, eliminating micro‑jitter that causes UI test failures. Measurably reduces flake rate by >40% in randomized UI skins.\n\n5) Long‑Tail Robustness Sweeps: Auto‑sample apps from awesome‑vue/awesome‑go/awesome‑ios; launch containerized demos with awesome‑docker guidance; the agent validates create/open/save flows across stacks, collecting coverage metrics and highlighting brittle libraries.\n\n6) News‑Driven Scenario Fuzzer: Use newspaper to scrape trending fintech or travel flows; synthesize adversarial forms (edge validators, timeouts) and run nightly sweeps. Bundle failures with lossless‑cut reels for stakeholders.\n\n7) Offline Field Debugging: P2P share a failing scenario bundle to an air‑gapped environment; same policy, same containers, same traces. No cloud dependence.\n\nLimitations and mitigations:\n- iOS automation depth may be limited—start with simulators and webviews; define adapters later.\n- Dreamer transfer may need adapter heads per world—keep shared trunk, small heads.\n- GPL concerns from lossless‑cut—optional service with FFmpeg fallback.\n- Browser nondeterminism—use UAOG smoothing and deterministic seeds where possible.\n- Resource intensity—exo schedules efficiently; headless modes reduce overhead.",
+  "innovation_analysis": "Innovation score: 9.1/10. We recast UI/terminal automation as embodied control, unify worlds with UAOG, and use MCP as an agentic switchboard. The illicit link—DOM/TTY as physics—yields transferable control policies and shared curriculum across modalities. Immediate next steps: 1) Implement UAOG schema and gRPC bus; 2) Build DOM2Physics and TTY2Dynamics adapters; 3) Stand up MCP tools for Genesis, SeleniumBase, egui, Terminal; 4) Create a minimal JeecgBoot workflow scenario; 5) Wire lossless‑cut headless extraction; 6) Package via pear and validate reproducibility. Key metrics: cross‑world task success (>85%), latency (<1.2× real‑time), flake reduction (>40%), bundle reproducibility (100%), deception‑robustness (no false passes under volkswagen probes). Essential stack: Python (Genesis/SeleniumBase), Rust (egui), Go (harness), TypeScript (MCP/Ink), Docker/Xvfb/WebGPU, gRPC/WebSocket, pear‑desktop.",
+  "sources": [
+    {
+      "name": "modelcontextprotocol/servers",
+      "url": "https://github.com/modelcontextprotocol/servers",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Model Context Protocol servers\n\nThis repository is a collection of *reference implementations* for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), as well as references to community-built servers and additional resources.\n\nThe servers in this repository showcase the versatility and extensibility of MCP, demonstrating how it can be used to give Large Language Models (LLMs) secure, controlled access to tools and data sources.\nTypically, each MCP server is implemented with an MCP SDK:\n\n- [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk)\n- [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk)\n- [Java MCP SDK](https://github.com/modelcontextprotocol/java-sdk)\n- [Kotlin MCP SDK](https://github.com/modelcontextprotocol/kotlin-sdk)\n- [PHP MCP SDK](https://github.com/modelcontextprotocol/php-sdk)\n- [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk)\n- [Ruby MCP SDK](https://github.com/modelcontextprotocol/ruby-sdk)\n- [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)\n- [Swift MCP SDK](https://github.com/modelcontextprotocol/swift-sdk)\n- [TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)\n\n> [!NOTE]\n> Lists in this README are maintained in alphabetical order to minimize merge conflicts when adding new items.\n\n## 🌟 Reference Servers\n\nThese servers aim to demonstrate MCP features and the official SDKs.\n\n- **[Everything](src/everything)** - Reference / test server with prompts, resources, and tools.\n- **[Fetch](src/fetch)** - Web content fetching and conversion for efficient LLM usage.\n- **[Filesystem](src/filesystem)** - Secure file operations with configurable access controls.\n- **[Git](src/git)** - Tools to read, search, and manipulate Git repositories.\n- **[Memory](src/memory)** - Knowledge graph-based persistent memory system.\n- **[Sequential Thinking](src/sequentialthinking)** - Dynamic and reflective problem-solving through thought sequences.\n- **[Time](src/time)** - Time",
+      "scores": {
+        "novelty": 0.8417,
+        "health": 0.75,
+        "relevance": 0.783,
+        "author_rep": 0.0,
+        "gem_score": 0.8278
+      },
+      "concepts": [
+        "-",
+        "https",
+        "mcp",
+        "mcp sdk",
+        "- img",
+        "img height",
+        "height width",
+        "width src"
+      ]
+    },
+    {
+      "name": "Genesis-Embodied-AI/Genesis",
+      "url": "https://github.com/Genesis-Embodied-AI/Genesis",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "![Genesis](imgs/big_text.png)\r\n\r\n![Teaser](imgs/teaser.png)\r\n\r\n[![PyPI - Version](https://img.shields.io/pypi/v/genesis-world)](https://pypi.org/project/genesis-world/)\r\n[![PyPI Downloads](https://static.pepy.tech/badge/genesis-world)](https://pepy.tech/projects/genesis-world)\r\n[![GitHub Issues](https://img.shields.io/github/issues/Genesis-Embodied-AI/Genesis)](https://github.com/Genesis-Embodied-AI/Genesis/issues)\r\n[![GitHub Discussions](https://img.shields.io/github/discussions/Genesis-Embodied-AI/Genesis)](https://github.com/Genesis-Embodied-AI/Genesis/discussions)\r\n[![Discord](https://img.shields.io/discord/1322086972302430269?logo=discord)](https://discord.gg/nukCuhB47p)\r\n<a href=\"https://drive.google.com/uc?export=view&id=1ZS9nnbQ-t1IwkzJlENBYqYIIOOZhXuBZ\"><img src=\"https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white\" height=\"20\" style=\"display:inline\"></a>\r\n\r\n[![README in English](https://img.shields.io/badge/English-d9d9d9)](./README.md)\r\n[![README en Français](https://img.shields.io/badge/Francais-d9d9d9)](./README_FR.md)\r\n[![한국어 README](https://img.shields.io/badge/한국어-d9d9d9)](./README_KR.md)\r\n[![简体中文版自述文件](https://img.shields.io/badge/简体中文-d9d9d9)](./README_CN.md)\r\n[![日本語版 README](https://img.shields.io/badge/日本語-d9d9d9)](./README_JA.md)\r\n\r\n# Genesis\r\n\r\n## 🔥 News\r\n- [2025-08-05] Released v0.3.0 🎊 🎉\r\n- [2025-07-02] The development of Genesis is now officially supported by [Genesis AI](https://genesis-ai.company/).\r\n- [2025-01-09] We released a [detailed performance benchmarking and comparison report](https://github.com/zhouxian/genesis-speed-benchmark) on Genesis, together with all the test scripts.\r\n- [2025-01-08] Released v0.2.1 🎊 🎉\r\n- [2025-01-08] Created [Discord](https://discord.gg/nukCuhB47p) and [Wechat](https://drive.google.com/uc?export=view&id=1ZS9nnbQ-t1IwkzJlENBYqYIIOOZhXuBZ) group.\r\n- [2024-12-25] Added a [docker](#docker) including support for the ray-tracing renderer\r\n- [2024-12-24] Added guidelines fo",
+      "scores": {
+        "novelty": 0.6407,
+        "health": 1.0,
+        "relevance": 0.7955,
+        "author_rep": 0.0,
+        "gem_score": 0.7064
+      },
+      "concepts": [
+        "https",
+        "genesis",
+        "-",
+        "docker",
+        ".",
+        "physics",
+        "install",
+        ". -"
+      ]
+    },
+    {
+      "name": "emilk/egui",
+      "url": "https://github.com/emilk/egui",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# 🖌 egui: an easy-to-use GUI in pure Rust\n\n[<img alt=\"github\" src=\"https://img.shields.io/badge/github-emilk/egui-8da0cb?logo=github\" height=\"20\">](https://github.com/emilk/egui)\n[![Latest version](https://img.shields.io/crates/v/egui.svg)](https://crates.io/crates/egui)\n[![Documentation](https://docs.rs/egui/badge.svg)](https://docs.rs/egui)\n[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)\n[![Build Status](https://github.com/emilk/egui/workflows/Rust/badge.svg)](https://github.com/emilk/egui/actions/workflows/rust.yml)\n[![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/emilk/egui/blob/main/LICENSE-MIT)\n[![Apache](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/emilk/egui/blob/main/LICENSE-APACHE)\n[![Discord](https://img.shields.io/discord/900275882684477440?label=egui%20discord)](https://discord.gg/JFcEma9bJq)\n\n\n<div align=\"center\">\n<a href=\"https://www.rerun.io/\"><img src=\"https://github.com/user-attachments/assets/78e79463-4357-461b-bbd1-31aa5ef5e1a2\" width=\"250\"></a>\n\negui development is sponsored by [Rerun](https://www.rerun.io/), a startup building<br>\nan SDK for visualizing streams of multimodal data.\n</div>\n\n---\n\n👉 [Click to run the web demo](https://www.egui.rs/#demo) 👈\n\negui (pronounced \"e-gooey\") is a simple, fast, and highly portable immediate mode GUI library for Rust. egui runs on the web, natively, and [in your favorite game engine](#integrations).\n\negui aims to be the easiest-to-use Rust GUI library, and the simplest way to make a web app in Rust.\n\negui can be used anywhere you can draw textured triangles, which means you can easily integrate it into your game engine of choice.\n\n[`eframe`](https://github.com/emilk/egui/tree/main/crates/eframe) is the official egui framework, which supports writing apps for Web, Linux, Mac, Windows, and Android.\n\n\n## Example\n\n``` rust\nui.heading(\"My egui Application\");\nui.horizontal(",
+      "scores": {
+        "novelty": 0.5482,
+        "health": 1.0,
+        "relevance": 0.7798,
+        "author_rep": 0.0,
+        "gem_score": 0.6658
+      },
+      "concepts": [
+        "https",
+        "egui",
+        ".",
+        "src https",
+        "gui",
+        "##",
+        "if",
+        "web"
+      ]
+    },
+    {
+      "name": "harness/harness",
+      "url": "https://github.com/harness/harness",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# Harness\nHarness Open Source is an open source development platform packed with the power of code hosting, automated DevOps pipelines, hosted development environments (Gitspaces), and artifact registries.\n\n## Overview\nHarness Open source is an open source development platform packed with the power of code hosting, automated DevOps pipelines, Gitspaces, and artifact registries.\n\n\n## Running Harness locally\n> The latest publicly released docker image can be found on [harness/harness](https://hub.docker.com/r/harness/harness).\n\nTo install Harness yourself, simply run the command below. Once the container is up, you can visit http://localhost:3000 in your browser.\n\n```bash\ndocker run -d \\\n  -p 3000:3000 \\\n  -p 3022:3022 \\\n  -v /var/run/docker.sock:/var/run/docker.sock \\\n  -v /tmp/harness:/data \\\n  --name harness \\\n  --restart always \\\n  harness/harness\n```\n> The Harness image uses a volume to store the database and repositories. It is highly recommended to use a bind mount or named volume as otherwise all data will be lost once the container is stopped.\n\nSee [developer.harness.io](https://developer.harness.io/docs/open-source) to learn how to get the most out of Harness.\n\n## Where is Drone?\n\nHarness Open Source represents a massive investment in the next generation of Drone. Where Drone focused solely on continuous integration, Harness adds source code hosting, developer environments (gitspaces), and artifact registries; providing teams with an end-to-end, open source DevOps platform.\n\nThe goal is for Harness to eventually be at full parity with Drone in terms of pipeline capabilities, allowing users to seamlessly migrate from Drone to Harness.\n\nBut, we expect this to take some time, which is why we took a snapshot of Drone as a feature branch [drone](https://github.com/harness/harness/tree/drone) ([README](https://github.com/harness/harness/blob/drone/.github/readme.md)) so it can continue development.\n\nAs for Harness, the development is taking place on the [main](htt",
+      "scores": {
+        "novelty": 0.5045,
+        "health": 0.75,
+        "relevance": 0.8015,
+        "author_rep": 0.0,
+        "gem_score": 0.5923
+      },
+      "concepts": [
+        "harness",
+        "install",
+        "https",
+        "run",
+        "open source",
+        "http //localhost",
+        "##",
+        "can"
+      ]
+    },
+    {
+      "name": "mifi/lossless-cut",
+      "url": "https://github.com/mifi/lossless-cut",
+      "description": "",
+      "language": "module",
+      "license": "GPL-2.0",
+      "readme_snippet": "<div align=\"center\">\n\t<a href=\"https://go.warp.dev/lossless-cut\" target=\"_blank\">\n\t\t<sup>Special thanks to:</sup>\n\t\t<br>\n\t\t<img alt=\"Warp sponsorship\" width=\"400\" src=\"https://github.com/warpdotdev/brand-assets/blob/main/Github/Sponsor/Warp-Github-LG-02.png\">\n\t\t<br>\n\t\t<h>Warp, built for coding with multiple AI agents</b>\n\t\t<br>\n\t\t<sup>Available for macOS, Linux and Windows</sup>\n\t</a>\n</div>\n\n<br>\n\n<div align=\"center\">\n\t<br>\n  <p><a href=\"https://mifi.no/losslesscut/\"><img src=\"src/renderer/src/icon.svg\" width=\"120\" alt=\"LosslessCut\" /></a></p>\n  <p><b>LosslessCut</b></p>\n  The swiss army knife of lossless video/audio editing\n\t<br>\n  <img src=\"https://github.com/mifi/lossless-cut/workflows/Build/release/badge.svg\" />\n  <a href=\"https://paypal.me/mifino/usd\"><img src=\"https://img.shields.io/badge/Donate-PayPal-green.svg\" /></a> <a href=\"https://github.com/mifi/lossless-cut#download\"><img src=\"https://img.shields.io/github/v/release/mifi/lossless-cut\" /></a> <a href=\"https://discord.gg/fhnEREfUJ3\"><img src=\"https://img.shields.io/discord/986051448385183804\" /></a> <a href=\"https://twitter.com/losslesscut\"><img src=\"https://img.shields.io/twitter/follow/losslesscut?label=Twitter&style=social\" alt=\"Twitter\"></a>\n\t<br>\n\t<br>\n  <a href=\"https://mifi.no/thanks/\">Thanks to my supporters</a> and everyone who purchased LosslessCut!\n\t<br>\n\t<br>\n  <p align=\"center\"><img src=\"main_screenshot.jpg\" width=\"600\" alt=\"screenshot\" /></p>\n\t<br>\n\t<br>\n</div>\n\nLosslessCut aims to be the ultimate cross platform FFmpeg GUI for extremely fast and lossless operations on video, audio, subtitle and other related media files.\nThe main feature is lossless trimming and cutting of video and audio files, which is great for saving space by rough-cutting your large video files taken from a video camera, GoPro, drone, etc. It lets you quickly extract the good parts from your videos and discard many gigabytes of data without doing a slow re-encode and thereby losing quality. There are also many more [u",
+      "scores": {
+        "novelty": 0.4633,
+        "health": 0.75,
+        "relevance": 0.808,
+        "author_rep": 0.0,
+        "gem_score": 0.5819
+      },
+      "concepts": [
+        "-",
+        "video",
+        "file",
+        "https",
+        "audio",
+        "cut",
+        "tracks",
+        "br"
+      ]
+    },
+    {
+      "name": "pear-devs/pear-desktop",
+      "url": "https://github.com/pear-devs/pear-desktop",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n\n# :pear: Pear Desktop\n\n[![GitHub release](https://img.shields.io/github/release/pear-devs/pear-desktop.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/releases/)\n[![GitHub license](https://img.shields.io/github/license/pear-devs/pear-desktop.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/blob/master/license)\n[![eslint code style](https://img.shields.io/badge/code_style-eslint-5ed9c7.svg?style=for-the-badge)](https://github.com/pear-devs/pear-desktop/blob/master/eslint.config.mjs)\n[![Build status](https://img.shields.io/github/actions/workflow/status/pear-devs/pear-desktop/build.yml?branch=master&style=for-the-badge)](https://GitHub.com/pear-devs/pear-desktop/releases/)\n[![GitHub All Releases](https://img.shields.io/github/downloads/pear-devs/pear-desktop/total?style=for-the-badge)](https://GitHub.com/pear-devs/pear-desktop/releases/)\n<!--[![AUR](https://img.shields.io/aur/version/pear-desktop-bin?color=blueviolet&style=for-the-badge)](https://aur.archlinux.org/packages/pear-desktop-bin)-->\n[![Known Vulnerabilities](https://snyk.io/test/github/pear-devs/pear-desktop/badge.svg)](https://snyk.io/test/github/pear-devs/pear-desktop)\n\n</div>\n\n<!--![Screenshot](web/screenshot.png \"Screenshot\")-->\n\n- Native look & feel extension\n\n> [!IMPORTANT]\n> ⚠️ Disclaimer\n>\n> **No Affiliation**\n>\n> This project, and its contributors, are not affiliated with, authorized by, endorsed by, or in any way officially connected with Google LLC, YouTube, or any of their subsidiaries or affiliates. **This is an independent, non-profit, and unofficial extension developed by a team of volunteers with the goal of providing a desktop experience.**\n>\n> **Trademarks**\n>\n> The names \"Google\" and \"YouTube Music\", as well as related names, marks, emblems, and images, are registered trademarks of their respective owners. Any use of these trademarks is for identification and reference purposes only and does not imply any association with the tr",
+      "scores": {
+        "novelty": 0.285,
+        "health": 1.0,
+        "relevance": 0.7834,
+        "author_rep": 0.0,
+        "gem_score": 0.5729
+      },
+      "concepts": [
+        "-",
+        "https",
+        "style",
+        "//",
+        "install",
+        "/",
+        "style for-the-badge",
+        "for-the-badge https"
+      ]
+    },
+    {
+      "name": "exo-explore/exo",
+      "url": "https://github.com/exo-explore/exo",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<div align=\"center\">\n\n<picture>\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"/docs/exo-logo-black-bg.jpg\">\n  <img alt=\"exo logo\" src=\"/docs/exo-logo-transparent.png\" width=\"50%\" height=\"50%\">\n</picture>\n\nexo: Run your own AI cluster at home with everyday devices. Maintained by [exo labs](https://x.com/exolabs).\n\n\n<h3>\n\n[Discord](https://discord.gg/EUnjGpsmWw) | [Telegram](https://t.me/+Kh-KqHTzFYg3MGNk) | [X](https://x.com/exolabs)\n\n</h3>\n\n[![GitHub Repo stars](https://img.shields.io/github/stars/exo-explore/exo)](https://github.com/exo-explore/exo/stargazers)\n[![Tests](https://dl.circleci.com/status-badge/img/circleci/TrkofJDoGzdQAeL6yVHKsg/4i5hJuafuwZYZQxbRAWS71/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/circleci/TrkofJDoGzdQAeL6yVHKsg/4i5hJuafuwZYZQxbRAWS71/tree/main)\n[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)\n\n<a href=\"https://trendshift.io/repositories/11849\" target=\"_blank\"><img src=\"https://trendshift.io/api/badge/repositories/11849\" alt=\"exo-explore%2Fexo | Trendshift\" style=\"width: 250px; height: 55px;\" width=\"250\" height=\"55\"/></a>\n\n</div>\n\n---\n\n> **EXO**\n>\n> EXO started out of a desire to run research experiments on large language models using the hardware we already owned.\n>\n> What began here is becoming part of something much larger.\n>\n> soon™\n>\n> \\- The EXO Team\n\n---\n\n--ify your existing devices into one powerful GPU: iPhone, iPad, Android, Mac, NVIDIA, Raspberry Pi, pretty much any device!\n\n<div align=\"center\">\n  <h2>Update: exo is hiring. See <a href=\"https://exolabs.net\">here</a> for more details.</h2>\n</div>\n\n## Get Involved\n\nexo is **experimental** software. Expect bugs early on. Create issues so they can be fixed. The [exo labs](https://x.com/exolabs) team will strive to resolve issues quickly.\n\nWe also welcome contributions from the community. We have a list of bounties in [this sheet](https://docs.google.com/spreadsheets/d/1cTCpTIp48UnnI",
+      "scores": {
+        "novelty": 0.5832,
+        "health": 0.5,
+        "relevance": 0.8114,
+        "author_rep": 0.0,
+        "gem_score": 0.5604
+      },
+      "concepts": [
+        "exo",
+        "https",
+        "-",
+        "###",
+        "model",
+        "http //localhost",
+        "device",
+        "run"
+      ]
+    },
+    {
+      "name": "veggiemonk/awesome-docker",
+      "url": "https://github.com/veggiemonk/awesome-docker",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# Awesome Docker [![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)][sindresorhus] [![Netlify Status](https://api.netlify.com/api/v1/badges/8ca86717-11ba-46d4-9d0a-700d8527f13b/deploy-status)](https://app.netlify.com/sites/awesome-docker/deploys)[![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/veggiemonk/awesome-docker/)[![Last Commit](https://img.shields.io/github/last-commit/veggiemonk/awesome-docker)](https://github.com/veggiemonk/awesome-docker/commits/main)<!-- omit in toc -->\n\n> A curated list of Docker resources and projects\n\nIf you would like to contribute, please read [CONTRIBUTING.md][contributing] first.\nIt contains a lot of tips and guidelines to help keep things organized.\nJust click [README.md][editreadme] to submit a [pull request][editreadme].\nIf this list is not complete, you can [contribute][editreadme] to make it so. Here is a great video tutorial to learn how to [contribute on Github](https://egghead.io/lessons/javascript-identifying-how-to-contribute-to-an-open-source-project-on-github).\n\n> **Please**, help organize these resources so that they are _easy to find_ and _understand_ for newcomers. See how to **[Contribute][contributing]** for tips!\n\n**_If you see a link here that is not (any longer) a good fit, you can fix it by submitting a [pull request][editreadme] to improve this file. Thank you!_**\n\nThe creators and maintainers of this list do not receive any form of payment to accept a change made by any contributor. This page is not an official Docker product in any way. It is a list of links to projects and is maintained by volunteers. Everybody is welcome to contribute. The goal of this repo is to index open-source projects, not to advertise for profit.\n\nAll the links are monitored and tested with a home baked [Node.js script](https://github.com/veggiemonk/awesome-docker/blob/master/.github/workflows/pull_request.yml)\n\n# Conte",
+      "scores": {
+        "novelty": 0.2107,
+        "health": 1.0,
+        "relevance": 0.7893,
+        "author_rep": 0.0,
+        "gem_score": 0.5504
+      },
+      "concepts": [
+        "-",
+        "docker",
+        "https",
+        "- docker",
+        "docker https",
+        "--",
+        "#",
+        "list"
+      ]
+    },
+    {
+      "name": "vadimdemedes/ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://github.com/vshymanskyy/StandWithUkraine/blob/main/docs/README.md)\n\n---\n\n<div align=\"center\">\n\t<br>\n\t<br>\n\t<img width=\"240\" alt=\"Ink\" src=\"media/logo.png\">\n\t<br>\n\t<br>\n\t<br>\n</div>\n\n> React for CLIs. Build and test your CLI output using components.\n\n[![Build Status](https://github.com/vadimdemedes/ink/workflows/test/badge.svg)](https://github.com/vadimdemedes/ink/actions)\n[![npm](https://img.shields.io/npm/dm/ink?logo=npm)](https://npmjs.com/package/ink)\n\nInk provides the same component-based UI building experience that React offers in the browser, but for command-line apps.\nIt uses [Yoga](https://github.com/facebook/yoga) to build Flexbox layouts in the terminal, so most CSS-like properties are available in Ink as well.\nIf you are already familiar with React, you already know Ink.\n\nSince Ink is a React renderer, all features of React are supported.\nHead over to the [React](https://reactjs.org) website for documentation on how to use it.\nOnly Ink's methods are documented in this readme.\n\n---\n\n<div align=\"center\">\n\t<p>\n\t\t<p>\n\t\t\t<sup>\n\t\t\t\t<a href=\"https://opencollective.com/vadimdemedes\">My open source work is supported by the community ❤️</a>\n\t\t\t</sup>\n\t\t</p>\n\t</p>\n</div>\n\n## Install\n\n```sh\nnpm install ink react\n```\n\n## Usage\n\n```jsx\nimport React, {useState, useEffect} from 'react';\nimport {render, Text} from 'ink';\n\nconst Counter = () => {\n\tconst [counter, setCounter] = useState(0);\n\n\tuseEffect(() => {\n\t\tconst timer = setInterval(() => {\n\t\t\tsetCounter(previousCounter => previousCounter + 1);\n\t\t}, 100);\n\n\t\treturn () => {\n\t\t\tclearInterval(timer);\n\t\t};\n\t}, []);\n\n\treturn <Text color=\"green\">{counter} tests passed</Text>;\n};\n\nrender(<Counter />);\n```\n\n<img src=\"media/demo.svg\" width=\"600\">\n\nFeel free to play around with the code and fork this Repl at [https://repl.it/@vadimdemedes/ink-counter-demo](https://repl.it/@vadimdemedes/ink-counter-demo).\n\n## Who's Using Ink?\n\n- [",
+      "scores": {
+        "novelty": 0.3391,
+        "health": 0.75,
+        "relevance": 0.7837,
+        "author_rep": 0.0,
+        "gem_score": 0.5322
+      },
+      "concepts": [
+        "-",
+        "https",
+        "react",
+        "cli",
+        "ink",
+        "cli https",
+        "game. -",
+        "build"
+      ]
+    },
+    {
+      "name": "avelino/awesome-go",
+      "url": "https://github.com/avelino/awesome-go",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Awesome Go\n\n<a href=\"https://awesome-go.com/\"><img align=\"right\" src=\"https://github.com/avelino/awesome-go/raw/main/tmpl/assets/logo.png\" alt=\"awesome-go\" title=\"awesome-go\" /></a>\n\n[![Build Status](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml?query=branch%3Amain)\n[![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome)\n[![Slack Widget](https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=red)](https://gophers.slack.com/messages/awesome)\n[![Netlify Status](https://api.netlify.com/api/v1/badges/83a6dcbe-0da6-433e-b586-f68109286bd5/deploy-status)](https://app.netlify.com/sites/awesome-go/deploys)\n[![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/avelino/awesome-go/)\n[![Last Commit](https://img.shields.io/github/last-commit/avelino/awesome-go)](https://github.com/avelino/awesome-go/commits/main)\n\nWe use the _[Golang Bridge](https://github.com/gobridge/about-us/blob/master/README.md)_ community Slack for instant communication, follow the [form here to join](https://invite.slack.golangbridge.org/).\n\n<a href=\"https://www.producthunt.com/posts/awesome-go?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-awesome-go\" target=\"_blank\"><img src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=291535&theme=light\" alt=\"awesome-go - Curated list awesome Go frameworks, libraries and software | Product Hunt\" style=\"width: 250px; height: 54px;\" width=\"250\" height=\"54\" /></a>\n\n**Sponsorships:**\n\n_Special thanks to_\n\n<div align=\"center\">\n<table cellpadding=\"5\">\n<tbody align=\"center\">\n<tr>\n<td colspan=\"2\">\n<a href=\"https://bit.ly/awesome-go-workos\">\n<img src=\"https://avelino.run/sponsors/workos-logo-white-bg.svg\" width=\"200\" alt=\"WorkOS\"><br/>\n<b>Your app",
+      "scores": {
+        "novelty": 0.4662,
+        "health": 0.5,
+        "relevance": 0.7961,
+        "author_rep": 0.0,
+        "gem_score": 0.5122
+      },
+      "concepts": [
+        "-",
+        "https",
+        "awesome go",
+        "awesome",
+        "go",
+        "href https",
+        "src https",
+        "- database"
+      ]
+    },
+    {
+      "name": "microsoft/terminal",
+      "url": "https://github.com/microsoft/terminal",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "![terminal-logos](https://github.com/microsoft/terminal/assets/91625426/333ddc76-8ab2-4eb4-a8c0-4d7b953b1179)\n\n[![Terminal Build Status](https://dev.azure.com/shine-oss/terminal/_apis/build/status%2FTerminal%20CI?branchName=main)](https://dev.azure.com/shine-oss/terminal/_build/latest?definitionId=1&branchName=main)\n\n# Welcome to the Windows Terminal, Console and Command-Line repo\n\n<details>\n  <summary><strong>Table of Contents</strong></summary>\n\n- [Installing and running Windows Terminal](#installing-and-running-windows-terminal)\n  - [Microsoft Store \\[Recommended\\]](#microsoft-store-recommended)\n  - [Other install methods](#other-install-methods)\n    - [Via GitHub](#via-github)\n    - [Via Windows Package Manager CLI (aka winget)](#via-windows-package-manager-cli-aka-winget)\n    - [Via Chocolatey (unofficial)](#via-chocolatey-unofficial)\n    - [Via Scoop (unofficial)](#via-scoop-unofficial)\n- [Installing Windows Terminal Canary](#installing-windows-terminal-canary)\n- [Windows Terminal Roadmap](#windows-terminal-roadmap)\n- [Terminal \\& Console Overview](#terminal--console-overview)\n  - [Windows Terminal](#windows-terminal)\n  - [The Windows Console Host](#the-windows-console-host)\n  - [Shared Components](#shared-components)\n  - [Creating the new Windows Terminal](#creating-the-new-windows-terminal)\n- [Resources](#resources)\n- [FAQ](#faq)\n  - [I built and ran the new Terminal, but it looks just like the old console](#i-built-and-ran-the-new-terminal-but-it-looks-just-like-the-old-console)\n- [Documentation](#documentation)\n- [Contributing](#contributing)\n- [Communicating with the Team](#communicating-with-the-team)\n- [Developer Guidance](#developer-guidance)\n- [Prerequisites](#prerequisites)\n- [Building the Code](#building-the-code)\n  - [Building in PowerShell](#building-in-powershell)\n  - [Building in Cmd](#building-in-cmd)\n- [Running \\& Debugging](#running--debugging)\n  - [Coding Guidance](#coding-guidance)\n- [Code of Conduct](#code-of-conduct)\n\n</details>\n\n<br />\n\n",
+      "scores": {
+        "novelty": 0.4333,
+        "health": 0.5,
+        "relevance": 0.7664,
+        "author_rep": 0.0,
+        "gem_score": 0.4989
+      },
+      "concepts": [
+        "windows terminal",
+        "terminal",
+        "windows",
+        "-",
+        "https",
+        "install",
+        "portable zip",
+        "package"
+      ]
+    },
+    {
+      "name": "seleniumbase/SeleniumBase",
+      "url": "https://github.com/seleniumbase/SeleniumBase",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<!-- SeleniumBase Docs -->\n\n<meta property=\"og:site_name\" content=\"SeleniumBase\">\n<meta property=\"og:title\" content=\"SeleniumBase: Python Web Automation and E2E Testing\" />\n<meta property=\"og:description\" content=\"Fast, easy, and reliable Web/UI testing with Python.\" />\n<meta property=\"og:keywords\" content=\"Python, pytest, selenium, webdriver, testing, automation, seleniumbase, framework, dashboard, recorder, reports, screenshots\">\n<meta property=\"og:image\" content=\"https://seleniumbase.github.io/cdn/img/mac_sb_logo_5b.png\" />\n<link rel=\"icon\" href=\"https://seleniumbase.github.io/img/logo7.png\" />\n\n<h1>SeleniumBase</h1>\n\n<p align=\"center\"><a href=\"https://github.com/seleniumbase/SeleniumBase/\"><img src=\"https://seleniumbase.github.io/cdn/img/super_logo_sb3.png\" alt=\"SeleniumBase\" title=\"SeleniumBase\" width=\"350\" /></a></p>\n\n<p align=\"center\" class=\"hero__title\"><b>Automate, test, and scrape the web — on your own terms.<br /></b></p>\n\n<p align=\"center\"><a href=\"https://pypi.python.org/pypi/seleniumbase\" target=\"_blank\"><img src=\"https://img.shields.io/pypi/v/seleniumbase.svg?color=3399EE\" alt=\"PyPI version\" /></a> <a href=\"https://github.com/seleniumbase/SeleniumBase/releases\" target=\"_blank\"><img src=\"https://img.shields.io/github/v/release/seleniumbase/SeleniumBase.svg?color=22AAEE\" alt=\"GitHub version\" /></a> <a href=\"https://seleniumbase.io\"><img src=\"https://img.shields.io/badge/docs-seleniumbase.io-11BBAA.svg\" alt=\"SeleniumBase Docs\" /></a></p>\n<p align=\"center\"><a href=\"https://github.com/seleniumbase/SeleniumBase/actions\" target=\"_blank\"><img src=\"https://github.com/seleniumbase/SeleniumBase/workflows/CI%20build/badge.svg\" alt=\"SeleniumBase GitHub Actions\" /></a> <a href=\"https://github.com/seleniumbase/SeleniumBase/stargazers\"><img src=\"https://img.shields.io/github/stars/seleniumbase/SeleniumBase?style=social\"></a> <a href=\"https://pepy.tech/projects/seleniumbase?timeRange=threeMonths&category=version&includeCIDownloads=true&granularity=daily&viewType=line&",
+      "scores": {
+        "novelty": 0.191,
+        "health": 0.75,
+        "relevance": 0.7803,
+        "author_rep": 0.0,
+        "gem_score": 0.4785
+      },
+      "concepts": [
+        "href https",
+        "https",
+        "href",
+        "/a href",
+        "/a",
+        "/",
+        "seleniumbase",
+        "img src"
+      ]
+    },
+    {
+      "name": "jeecgboot/JeecgBoot",
+      "url": "https://github.com/jeecgboot/JeecgBoot",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "\nJeecgBoot AI低代码平台\n===============\n\n当前最新版本： 3.8.3（发布日期：2025-10-09） \n\n\n[![AUR](https://img.shields.io/badge/license-Apache%20License%202.0-blue.svg)](https://github.com/jeecgboot/JeecgBoot/blob/master/LICENSE)\n[![](https://img.shields.io/badge/Author-北京国炬软件-orange.svg)](https://jeecg.com)\n[![](https://img.shields.io/badge/blog-技术博客-orange.svg)](https://jeecg.blog.csdn.net)\n[![](https://img.shields.io/badge/version-3.8.3-brightgreen.svg)](https://github.com/jeecgboot/JeecgBoot)\n[![GitHub stars](https://img.shields.io/github/stars/zhangdaiscott/jeecg-boot.svg?style=social&label=Stars)](https://github.com/jeecgboot/JeecgBoot)\n[![GitHub forks](https://img.shields.io/github/forks/zhangdaiscott/jeecg-boot.svg?style=social&label=Fork)](https://github.com/jeecgboot/JeecgBoot)\n\n\n\n项目介绍\n-----------------------------------\n\n<h3 align=\"center\">企业级AI低代码平台</h3>\n\nJeecgBoot 是一款基于BPM流程和代码生成的AI低代码平台，助力企业快速实现低代码开发和构建AI应用。\n采用前后端分离架构（Ant Design&Vue3，SpringBoot3，SpringCloud Alibaba，Mybatis-plus），强大代码生成器实现前后端一键生成，无需手写代码。 \n平台引领AI低代码开发模式：AI生成→在线编码→代码生成→手工合并，解决Java项目80%重复工作，提升效率，节省成本，兼顾灵活性。 \n具备强大且颗粒化的权限控制，支持按钮权限和数据权限设置，满足大型业务系统需求。功能涵盖在线表单、表单设计、流程设计、门户设计、报表与大屏设计、OA办公、AI应用、AI知识库、大模型管理、AI流程编排、AI聊天，支持ChatGPT、DeepSeek、Ollama等多种AI大模型。\n\n`AI赋能报表:` 积木报表是一款自主研发的强大开源企业级Web报表与大屏工具。它通过零编码的拖拽式操作，赋能用户如同搭积木般轻松构建各类复杂报表和数据大屏，全面满足企业数据可视化与分析需求，助力企业级数据产品的高效打造与应用。\n\n`AI赋能低代码:` 提供完善成熟的AI应用平台，涵盖AI应用管理、AI模型管理、智能对话助手、知识库问答、流程编排与设计器、AI建表等多项功能。平台兼容多种主流大模型，包括ChatGPT、DeepSeek、Ollama、智普、千问等，助力企业高效构建智能化应用，推动低代码开发与AI深度融合。\n\n`JEECG宗旨是:` JEECG旨在通过OnlineCoding平台实现简单功能的零代码快速搭建，同时针对复杂功能采用代码生成器生成代码并手工合并，打造智能且灵活的低代码开发模式，有效解决了当前低代码产品普遍缺乏灵活性的问题，提升开发效率的同时兼顾系统的扩展性和定制化能力。\n\n`JEECG业务流程:` JEECG业务流程采用BPM工作流引擎实现业务审批，扩展任务接口供开发人员编写业务逻辑，表单提供表单设计器、在线配置表单和编码表单等多种解决方案。通过流程与表单的分离设计（松耦合）及任务节点的灵活配置，既保障了企业流程的安全性与保密性，又大幅降低了开发人员的工作量。\n\n\n\n\n\n适用项目\n-----------------------------------\nJeecgBoot低代码平台兼容所有J2EE项目开发，支持信创国产化，特别适用于SAAS、企业信息管理系统（MIS）、内部办公系统（OA）、企业资源计划系统（ERP）、客户关系管理系统（CRM）及AI知识库等场景。其半智能手工Merge开发模式，可显著提升70%以上的开发效率，极大降低开发成本。同时，JeecgBoot还是一款全栈式AI开发平台，助力企业快速",
+      "scores": {
+        "novelty": 0.298,
+        "health": 0.5,
+        "relevance": 0.7774,
+        "author_rep": 0.0,
+        "gem_score": 0.4534
+      },
+      "concepts": [
+        "-",
+        "https",
+        "+",
+        "-----------------------------------",
+        "https //github.com/jeecgboot/jeecgboot",
+        "分支",
+        "//github.com/jeecgboot/jeecgboot",
+        "http"
+      ]
+    },
+    {
+      "name": "codelucas/newspaper",
+      "url": "https://github.com/codelucas/newspaper",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "Newspaper3k: Article scraping & curation\n========================================\n\n.. image:: https://badge.fury.io/py/newspaper3k.svg\n    :target: http://badge.fury.io/py/newspaper3k.svg\n        :alt: Latest version\n\n.. image:: https://travis-ci.org/codelucas/newspaper.svg\n        :target: http://travis-ci.org/codelucas/newspaper/\n        :alt: Build status\n\n.. image:: https://coveralls.io/repos/github/codelucas/newspaper/badge.svg?branch=master\n        :target: https://coveralls.io/github/codelucas/newspaper\n        :alt: Coverage status\n\n\nInspired by `requests`_ for its simplicity and powered by `lxml`_ for its speed:\n\n    \"Newspaper is an amazing python library for extracting & curating articles.\"\n    -- `tweeted by`_ Kenneth Reitz, Author of `requests`_\n\n    \"Newspaper delivers Instapaper style article extraction.\" -- `The Changelog`_\n\n.. _`tweeted by`: https://twitter.com/kennethreitz/status/419520678862548992\n.. _`The Changelog`: http://thechangelog.com/newspaper-delivers-instapaper-style-article-extraction/\n\n**Newspaper is a Python3 library**! Or, view our **deprecated and buggy** `Python2 branch`_\n\n.. _`Python2 branch`: https://github.com/codelucas/newspaper/tree/python-2-head\n\nA Glance:\n---------\n\n.. code-block:: pycon\n\n    >>> from newspaper import Article\n\n    >>> url = 'http://fox13now.com/2013/12/30/new-year-new-laws-obamacare-pot-guns-and-drones/'\n    >>> article = Article(url)\n\n.. code-block:: pycon\n\n    >>> article.download()\n\n    >>> article.html\n    '<!DOCTYPE HTML><html itemscope itemtype=\"http://...'\n\n.. code-block:: pycon\n\n    >>> article.parse()\n\n    >>> article.authors\n    ['Leigh Ann Caldwell', 'John Honway']\n\n    >>> article.publish_date\n    datetime.datetime(2013, 12, 30, 0, 0)\n\n    >>> article.text\n    'Washington (CNN) -- Not everyone subscribes to a New Year's resolution...'\n\n    >>> article.top_image\n    'http://someCDN.com/blah/blah/blah/file.png'\n\n    >>> article.movies\n    ['http://youtube.com/path/to/link.com', ...]\n\n.. code-block:",
+      "scores": {
+        "novelty": 0.1606,
+        "health": 0.5,
+        "relevance": 0.835,
+        "author_rep": 0.0,
+        "gem_score": 0.4228
+      },
+      "concepts": [
+        "..",
+        "https",
+        "_",
+        "http",
+        ".. code-block",
+        "code-block pycon",
+        "article",
+        "-"
+      ]
+    },
+    {
+      "name": "vuejs/awesome-vue",
+      "url": "https://github.com/vuejs/awesome-vue",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <br>\n  <img width=\"400\" src=\"./assets/logo.svg\" alt=\"logo of vue-awesome repository\">\n  <br>\n  <br>\n</p>\n\n## Awesome Vue.js [![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome) [![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/vuejs/awesome-vue)\n\n> A curated list of awesome things related to Vue.js\n\n- [Awesome Vue.js  ](#awesome-vuejs--)\n- [Resources](#resources)\n  - [Official Resources](#official-resources)\n  - [External Resources](#external-resources)\n  - [Job Portal](#job-portal)\n  - [Community](#community)\n  - [Conferences](#conferences)\n  - [Podcasts](#podcasts)\n  - [Official Examples](#official-examples)\n  - [Tutorials](#tutorials)\n  - [Examples](#examples)\n  - [Books](#books)\n  - [Blog Posts](#blog-posts)\n  - [Courses](#courses)\n  - [Documentaries](#documentaries)\n- [Companies Using Vue.js](#companies-using-vuejs)\n- [Projects Using Vue.js](#projects-using-vuejs)\n  - [Open Source](#open-source)\n  - [Commercial Products](#commercial-products)\n  - [Apps/Websites](#appswebsites)\n  - [Interactive Experiences](#interactive-experiences)\n  - [Enterprise Usage](#enterprise-usage)\n  - [A11y](#a11y)\n- [Components \\& Libraries](#components--libraries)\n  - [Frameworks](#frameworks)\n    - [Responsive](#responsive)\n    - [Mobile](#mobile)\n    - [Component Collections](#component-collections)\n    - [Admin Template](#admin-template)\n    - [Server-side rendering](#server-side-rendering)\n    - [Static website generator](#static-website-generator)\n    - [Other](#other)\n  - [UI Layout](#ui-layout)\n  - [UI Components](#ui-components)\n    - [Table](#table)\n    - [Notification](#notification)\n    - [Loader](#loader)\n      - [Progress Bar](#progress-bar)\n    - [Tooltip](#tooltip)\n    - [Overlay](#overlay)\n    - [Icons](#icons)\n    - [Marquee](#marquee)\n    - [Menu](#menu)\n    - [Carousel](#carousel)\n    - [Chart",
+      "scores": {
+        "novelty": 0.3139,
+        "health": 0.25,
+        "relevance": 0.7948,
+        "author_rep": 0.0,
+        "gem_score": 0.399
+      },
+      "concepts": [
+        "-",
+        "https",
+        "vue.js",
+        "- vue.js",
+        "vue",
+        "- vue",
+        "resources",
+        "- official"
+      ]
+    },
+    {
+      "name": "alexandresanlim/Badges4-README.md-Profile",
+      "url": "https://github.com/alexandresanlim/Badges4-README.md-Profile",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align='center'>\n <a href='https://github.com/sponsors/alexandresanlim'>\n  <img src='https://github.com/alexandresanlim/Badges4-README.md-Profile/blob/master/sponsors/sponsor.png?raw=true' width=150 />\n </a>\n</p>\n\n<p align='center'>\nPlease, consider <a href=\"https://github.com/sponsors/alexandresanlim\">sponsor this project</a> ❤️\n</p>\n\n<h1 align='center'>\n  Welcome! Badges 4 README.md Profile\n</h1>\n\n<p align='center'>\n  Improve your README.md profile with these amazing badges. See a sample <a href='https://github.com/alexandresanlim'>here</a>\n</p>\n\n<p align='center'>\n  <a href=\"https://github.com/sponsors/alexandresanlim\"><img alt=\"Sponsor\" src=\"https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#white\" /></a>\n  &nbsp;\n  <a href=\"https://github.com/alexandresanlim/Badges4-README.md-Profile/stargazers\"><img alt=\"GitHub Repo stars\" src=\"https://img.shields.io/github/stars/alexandresanlim/Badges4-README.md-Profile?style=for-the-badge\" /></a>\n</p>\n<br />\n\n\n## How to use?\n\n1. Get a URL:\n\n   - You can use <kbd>Ctrl</kbd> <kbd>F</kbd> (Windows) or <kbd>⌘</kbd> <kbd>F</kbd> (mac) for find one\n\n2. Create a image tag:\n\n```\n<img src=\"{BadgeURLHere}\" />\n```\n\nor\n\n```\n![image]({BadgeURLHere})\n```\n\n3. Paste on your profile 🎉\n\n## Menu\n\n- [Welcome](#menu)\n- [How to use](#how-to-use)\n- [Badges](#badges)\n\n  - [🧑🏼‍🏭 Static](#-static)\n    - [📊 Analytics](#-analytics-)\n    - [🤖 Artificial Intelligence](#-artificial-intelligence-)\n    - [🔗 Blockchain](#-blockchain-)\n    - [📝 Blog](#-blog-)\n    - [👥 Community](#-community-)\n    - [📱 Contact](#-contact-)\n    - [☁ Cloud](#-cloud-)\n    - [💲 Cryptocurrency](#-cryptocurrency-)\n    - [⚡ Database](#-database-)\n    - [🖍 Design](#-design-)\n    - [📚 Education](#-education-)\n    - [📦 ETL](#-etl-)\n    - [🍔 Food](#-food-)\n    - [🚀 Frameworks & Library](#-frameworks--library-)\n    - [❤ Funding](#-funding-)\n    - [🎮 Games](#-games-)\n    - [🤜 Group](#-group-)\n    - [🏠 HomeLab](#-homelab-)\n    - [👩‍💻 IDE](#-ide",
+      "scores": {
+        "novelty": 0.2597,
+        "health": 0.25,
+        "relevance": 0.7918,
+        "author_rep": 0.0,
+        "gem_score": 0.3811
+      },
+      "concepts": [
+        "-",
+        "style for-the-badge",
+        "for-the-badge logo",
+        "logocolor white",
+        "https",
+        "style",
+        "for-the-badge",
+        "logo"
+      ]
+    },
+    {
+      "name": "vsouza/awesome-ios",
+      "url": "https://github.com/vsouza/awesome-ios",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n    <img src=\"https://github.com/vsouza/awesome-ios/blob/master/header.png?raw=true\" alt=\"Awesome\">\n</div>\n\n<p align=\"center\">\n    <img alt=\"awesome\" src=\"https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg\" />\n    <a href=\"https://ko-fi.com/M4M3WPRD\"><img width=\"110\" alt=\"Buy Me a Coffee\" src=\"buy_me_a_coffee.png\" /></a>\n</p>\n\n<p align=\"center\">This project is supported by:\n    <a href=\"https://www.digitalocean.com/?utm_medium=opensource&utm_source=awesome-ios\">\n    <img src=\"https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg\" width=\"201px\">\n  </a>\n<p>\n\n</p>\n\n## Contributing and Collaborating\n\nPlease see [CONTRIBUTING](https://github.com/vsouza/awesome-ios/blob/master/.github/CONTRIBUTING.md) and [CODE-OF-CONDUCT](https://github.com/vsouza/awesome-ios/blob/master/CODE_OF_CONDUCT.md) for details.\n\n## Contents\n\n- [Analytics](#analytics)\n- [App Routing](#app-routing)\n- [Apple TV](#apple-tv)\n- [App Store](#app-store)\n- [Architecture Patterns](#architecture-patterns)\n- [ARKit](#arkit)\n- [Authentication](#authentication)\n- [Blockchain](#blockchain)\n- [Books](#books)\n- [Cache](#cache)\n- [Charts](#charts)\n- [Code Injection](#code-injection)\n- [Code Quality](#code-quality)\n    - [Linter](#linter)\n- [Color](#color)\n- [Command Line](#command-line)\n- [Concurrency](#concurrency)\n- [Core Data](#core-data)\n- [Courses](#courses)\n    - [Getting Started](#getting-started)\n- [Database](#database)\n- [Data Structures / Algorithms](#data-structures--algorithms)\n- [Date & Time](#date--time)\n- [Debugging](#debugging)\n- [Dependency Injection](#dependency-injection)\n- [Dependency / Package Manager](#dependency--package-manager)\n- [Deployment / Distribution](#deployment--distribution)\n- [EventBus](#eventbus)\n- [Files](#files)\n- [Functional Programming](#functional-programming)\n- [Games](#games)\n- [GCD](#gcd)\n- [Gesture](#gesture)\n- [Graphics](#graphics)\n- [Hardware](#hardw",
+      "scores": {
+        "novelty": 0.1951,
+        "health": 0.25,
+        "relevance": 0.7942,
+        "author_rep": 0.0,
+        "gem_score": 0.3588
+      },
+      "concepts": [
+        "-",
+        "https",
+        "analytics",
+        "/",
+        "view",
+        "- other",
+        "app",
+        "data"
+      ]
+    },
+    {
+      "name": "auchenberg/volkswagen",
+      "url": "https://github.com/auchenberg/volkswagen",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# volkswagen\n\nVolkswagen detects when your tests are being run in a CI server, and\nmakes them pass.\n\n[![Build status](https://travis-ci.org/auchenberg/volkswagen.svg?branch=master)](https://travis-ci.org/auchenberg/volkswagen)\n[![js-standard-style](https://img.shields.io/badge/code%20style-standard-brightgreen.svg?style=flat)](https://github.com/feross/standard)\n[![volkswagen status](https://auchenberg.github.io/volkswagen/volkswagen_ci.svg?v=1)](https://github.com/auchenberg/volkswagen)\n\n![](https://auchenberg.github.io/volkswagen/illustration.gif)\n\n## Why?\n\nIf you want your software to be adopted by Americans, good tests scores\nfrom the CI server are very important. Volkswagen uses a defeat device to\ndetect when it's being tested in a CI server and will automatically\nreduce errors to an acceptable level for the tests to pass. This will\nallow you to spend _less_ time worrying about testing and _more_ time\nenjoying the good life as a trustful software developer.\n\nYou can start already by adding our evergreen build badge to your\nREADME:\n\n[![Volkswagen status](https://auchenberg.github.io/volkswagen/volkswagen_ci.svg)](https://github.com/auchenberg/volkswagen)\n\nMarkdown snippet:\n\n```md\n[![volkswagen status](https://auchenberg.github.io/volkswagen/volkswagen_ci.svg?v=1)](https://github.com/auchenberg/volkswagen)\n```\n\n## Installation\n\n```\nnpm install volkswagen\n```\n\n## Usage\n\nJust require volkswagen somewhere in your code-base - maybe in your main\ntest file:\n\n```js\nrequire('volkswagen')\n```\n\n## Project status\n\nCI servers detected:\n\n- [Travis CI](http://travis-ci.org)\n- [CircleCI](http://circleci.com)\n- [Jenkins CI](https://jenkins-ci.org)\n- [Hudson](http://hudson-ci.org)\n- [Bamboo](https://www.atlassian.com/software/bamboo)\n- [TeamCity](https://www.jetbrains.com/teamcity/)\n- [Team Foundation Server](https://www.visualstudio.com/en-us/products/tfs-overview-vs.aspx)\n- [Visual Studio Online CI](https://www.visualstudio.com/en-us/products/what-is-visual-studio-online-vs.asp",
+      "scores": {
+        "novelty": 0.1184,
+        "health": 0.25,
+        "relevance": 0.7908,
+        "author_rep": 0.0,
+        "gem_score": 0.329
+      },
+      "concepts": [
+        "https",
+        "-",
+        "ci",
+        "volkswagen",
+        "ci https",
+        "status https",
+        "##",
+        "http"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "drones",
+      "radio"
+    ],
+    "custom_queries": [],
+    "days": 35,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 18,
+    "explore_longtail": false,
+    "max_stars": 1000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution for unexpected technology mixing the topics",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": false,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "drones",
+      "radio"
+    ],
+    "days": 35,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 21,
+    "probed": 20,
+    "selected": 18,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "modelcontextprotocol/servers",
+        "url": "https://github.com/modelcontextprotocol/servers",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.8417,
+        "relevance": 0.783,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "mcp",
+          "mcp sdk",
+          "- img",
+          "img height",
+          "height width",
+          "width src"
+        ],
+        "gem_score": 0.8278
+      },
+      {
+        "name": "Genesis-Embodied-AI/Genesis",
+        "url": "https://github.com/Genesis-Embodied-AI/Genesis",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.6407,
+        "relevance": 0.7955,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "genesis",
+          "-",
+          "docker",
+          ".",
+          "physics",
+          "install",
+          ". -"
+        ],
+        "gem_score": 0.7064
+      },
+      {
+        "name": "emilk/egui",
+        "url": "https://github.com/emilk/egui",
+        "license": "Apache-2.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.5482,
+        "relevance": 0.7798,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "egui",
+          ".",
+          "src https",
+          "gui",
+          "##",
+          "if",
+          "web"
+        ],
+        "gem_score": 0.6658
+      },
+      {
+        "name": "harness/harness",
+        "url": "https://github.com/harness/harness",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.5045,
+        "relevance": 0.8015,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "harness",
+          "install",
+          "https",
+          "run",
+          "open source",
+          "http //localhost",
+          "##",
+          "can"
+        ],
+        "gem_score": 0.5923
+      },
+      {
+        "name": "mifi/lossless-cut",
+        "url": "https://github.com/mifi/lossless-cut",
+        "license": "GPL-2.0",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.4633,
+        "relevance": 0.808,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "video",
+          "file",
+          "https",
+          "audio",
+          "cut",
+          "tracks",
+          "br"
+        ],
+        "gem_score": 0.5819
+      },
+      {
+        "name": "pear-devs/pear-desktop",
+        "url": "https://github.com/pear-devs/pear-desktop",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.285,
+        "relevance": 0.7834,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "style",
+          "//",
+          "install",
+          "/",
+          "style for-the-badge",
+          "for-the-badge https"
+        ],
+        "gem_score": 0.5729
+      },
+      {
+        "name": "exo-explore/exo",
+        "url": "https://github.com/exo-explore/exo",
+        "license": "GPL-3.0",
+        "role": "module (Python)",
+        "novelty_score": 0.5832,
+        "relevance": 0.8114,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "exo",
+          "https",
+          "-",
+          "###",
+          "model",
+          "http //localhost",
+          "device",
+          "run"
+        ],
+        "gem_score": 0.5604
+      },
+      {
+        "name": "veggiemonk/awesome-docker",
+        "url": "https://github.com/veggiemonk/awesome-docker",
+        "license": "Apache-2.0",
+        "role": "module (NA)",
+        "novelty_score": 0.2107,
+        "relevance": 0.7893,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "docker",
+          "https",
+          "- docker",
+          "docker https",
+          "--",
+          "#",
+          "list"
+        ],
+        "gem_score": 0.5504
+      },
+      {
+        "name": "vadimdemedes/ink",
+        "url": "https://github.com/vadimdemedes/ink",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.3391,
+        "relevance": 0.7837,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "react",
+          "cli",
+          "ink",
+          "cli https",
+          "game. -",
+          "build"
+        ],
+        "gem_score": 0.5322
+      },
+      {
+        "name": "avelino/awesome-go",
+        "url": "https://github.com/avelino/awesome-go",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.4662,
+        "relevance": 0.7961,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "awesome go",
+          "awesome",
+          "go",
+          "href https",
+          "src https",
+          "- database"
+        ],
+        "gem_score": 0.5122
+      },
+      {
+        "name": "microsoft/terminal",
+        "url": "https://github.com/microsoft/terminal",
+        "license": "MIT",
+        "role": "module (C++)",
+        "novelty_score": 0.4333,
+        "relevance": 0.7664,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "windows terminal",
+          "terminal",
+          "windows",
+          "-",
+          "https",
+          "install",
+          "portable zip",
+          "package"
+        ],
+        "gem_score": 0.4989
+      },
+      {
+        "name": "seleniumbase/SeleniumBase",
+        "url": "https://github.com/seleniumbase/SeleniumBase",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.191,
+        "relevance": 0.7803,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "href https",
+          "https",
+          "href",
+          "/a href",
+          "/a",
+          "/",
+          "seleniumbase",
+          "img src"
+        ],
+        "gem_score": 0.4785
+      },
+      {
+        "name": "jeecgboot/JeecgBoot",
+        "url": "https://github.com/jeecgboot/JeecgBoot",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.298,
+        "relevance": 0.7774,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "+",
+          "-----------------------------------",
+          "https //github.com/jeecgboot/jeecgboot",
+          "分支",
+          "//github.com/jeecgboot/jeecgboot",
+          "http"
+        ],
+        "gem_score": 0.4534
+      },
+      {
+        "name": "codelucas/newspaper",
+        "url": "https://github.com/codelucas/newspaper",
+        "license": "MIT",
+        "role": "module (HTML)",
+        "novelty_score": 0.1606,
+        "relevance": 0.835,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "..",
+          "https",
+          "_",
+          "http",
+          ".. code-block",
+          "code-block pycon",
+          "article",
+          "-"
+        ],
+        "gem_score": 0.4228
+      },
+      {
+        "name": "vuejs/awesome-vue",
+        "url": "https://github.com/vuejs/awesome-vue",
+        "license": "MIT",
+        "role": "module (NA)",
+        "novelty_score": 0.3139,
+        "relevance": 0.7948,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "vue.js",
+          "- vue.js",
+          "vue",
+          "- vue",
+          "resources",
+          "- official"
+        ],
+        "gem_score": 0.399
+      },
+      {
+        "name": "alexandresanlim/Badges4-README.md-Profile",
+        "url": "https://github.com/alexandresanlim/Badges4-README.md-Profile",
+        "license": "MIT",
+        "role": "module (Markdown)",
+        "novelty_score": 0.2597,
+        "relevance": 0.7918,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "style for-the-badge",
+          "for-the-badge logo",
+          "logocolor white",
+          "https",
+          "style",
+          "for-the-badge",
+          "logo"
+        ],
+        "gem_score": 0.3811
+      },
+      {
+        "name": "vsouza/awesome-ios",
+        "url": "https://github.com/vsouza/awesome-ios",
+        "license": "MIT",
+        "role": "module (Swift)",
+        "novelty_score": 0.1951,
+        "relevance": 0.7942,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "analytics",
+          "/",
+          "view",
+          "- other",
+          "app",
+          "data"
+        ],
+        "gem_score": 0.3588
+      },
+      {
+        "name": "auchenberg/volkswagen",
+        "url": "https://github.com/auchenberg/volkswagen",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.1184,
+        "relevance": 0.7908,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "ci",
+          "volkswagen",
+          "ci https",
+          "status https",
+          "##",
+          "http"
+        ],
+        "gem_score": 0.329
+      }
+    ],
+    "architecture_ascii": "[1] modelcontextprotocol/servers  →  [2] Genesis-Embodied-AI/Genesis  →  [3] emilk/egui  →  [4] harness/harness  →  [5] mifi/lossless-cut  →  [6] pear-devs/pear-desktop  →  [7] exo-explore/exo  →  [8] veggiemonk/awesome-docker  →  [9] vadimdemedes/ink  →  [10] avelino/awesome-go  →  [11] microsoft/terminal  →  [12] seleniumbase/SeleniumBase  →  [13] jeecgboot/JeecgBoot  →  [14] codelucas/newspaper  →  [15] vuejs/awesome-vue  →  [16] alexandresanlim/Badges4-README.md-Profile  →  [17] vsouza/awesome-ios  →  [18] auchenberg/volkswagen\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "drones",
+        "radio"
+      ],
+      "days": 35,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 21,
+      "probed": 20,
+      "selected": 18,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

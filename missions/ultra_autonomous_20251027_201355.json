@@ -1,0 +1,214 @@
+{
+  "timestamp": "2025-10-27T20:13:55.874939",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC.",
+  "repository_synergy": "",
+  "technical_architecture": "",
+  "expected_impact": "",
+  "innovation_analysis": "",
+  "sources": [
+    {
+      "name": "GirijaShankar69/Cybersecurity-Internship-Program-2025",
+      "url": "https://github.com/GirijaShankar69/Cybersecurity-Internship-Program-2025",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# DIGISURAKSHA PARAHARI FOUNDATION INTERNSHIP 2025\r\n\r\nWelcome to the official repository for the **Digi Suraksha Cybersecurity Internship Program - 2025**.\r\n\r\nThis internship is designed to provide **hands-on experience** across critical domains in cybersecurity, including:\r\n\r\n* Threat Intelligence\r\n* Malware Analysis\r\n* Linux Privilege Escalation\r\n* OSINT & Reconnaissance\r\n* Web Exploitation\r\n* Vulnerability Assessment\r\n* Log Analysis & Incident Response\r\n\r\n---\r\n\r\n## Final Project Topic:\r\n\r\n[Social Engineering and Phising Detection prototype using AI](https://github.com/GirijaShankar69/Cybersecurity-Internship-Program-2025/tree/4fca53291a6b7cebbebb2a319c975d0274b17f67/Projects/AI%20in%20social%20engineering%20and%20phishing%20campaigns)\r\n\r\n---\r\n\r\n#### Team name: Cyber Hitmanz\r\n##### Which Stands for: Social Engineering and Phising Detection prototype using AI\r\n\r\n**Team member 1: Girija Shankar Sahoo**\r\n**Intern ID: 444**\r\n\r\n**Team member 2: Omkar Pawar**\r\n**Intern ID: 239**\r\n[Omkar Github](https://github.com/omkarpawar45/)\r\n\r\n---\r\n\r\n\r\n\r\n\r\n## 📅 Weekly Breakdown\r\n\r\n### ✅ Week 1 - MITRE TTP Mapping\r\n\r\n* Map APT Tactics, Techniques, and Procedures to the MITRE ATT\\&CK Framework\r\n* Create & test YARA rules\r\n* Export IOCs to MISP and document with screenshots\r\n\r\n### ✅ Week 2 - Malware & IOC (APT28)\r\n\r\n* Study APT28 and extract Indicators of Compromise\r\n* Analyze malware reports\r\n* Correlate findings using MISP & HybridAnalysis\r\n\r\n### ✅ Week 3 - Linux Privilege Escalation\r\n\r\n* Practice with **OverTheWire: Bandit** challenges\r\n* Document local privilege escalation techniques with cheat sheets\r\n\r\n### ✅ Week 4 - OSINT & Reconnaissance\r\n\r\n* Perform metadata analysis & image tracking\r\n* Utilize passive recon tools for open-source intelligence\r\n\r\n### ✅ Week 5 - Web Exploitation\r\n\r\n* Identify & report vulnerabilities: XSS, SQLi, SSRF\r\n* Conduct log analysis using Burp Suite (PortSwigger) references\r\n\r\n### ✅ Week 6 - Vulnerable Virtual Machines\r\n\r\n* Capture the Flag on **Mr. Robo",
+      "scores": {
+        "novelty": 0.0123,
+        "health": 0.0,
+        "relevance": 0.8357,
+        "author_rep": 0.0,
+        "gem_score": 0.0
+      },
+      "concepts": [
+        "### week",
+        "week -",
+        "-",
+        "###",
+        "week",
+        "--- ##",
+        "---",
+        "privilege escalation"
+      ]
+    },
+    {
+      "name": "ThatTotallyRealMyth/GhostHuntingInSplunk",
+      "url": "https://github.com/ThatTotallyRealMyth/GhostHuntingInSplunk",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "I built this repo as I went through the OffSec OSTH and OSIR certifications. The repos README takes you through different ways to use splunk, from simple to more advanced use cases; as well as providing as many references as possible for important fields and filter operators. \n\nThe first segments of the readme will take you through how to use splunk, exploring workflows and ways to get information and view it. The second segment goes over sorting and filtering methods; where i go through using commands like stat, WHERE operator, sort, and the | operator. Overall i hope that it acts as a handy reference for you as you go through using splunk and i will be sure to keep updating the repo/readme as i get more ideas, or develop more queries. \n\n\n## Basic Search Structure\n```spl\nindex=* source=\"*\" EventCode=1 \"powershell\"\n```\n\nThis searches ALL indexes for process creation events(which is what eventcode 1 is from sysmon) containing \"powershell\" anywhere in the event. You can also remove eventcode argument and the source and search for all events with \"powershell\"\n\nWhat I like to do with this is not specify the source, as often you wont need to unless you have ALOT of sources with coliding eventcodes(since they arent unique in windows). You can jump from specifing source to having a wildcard\n\n## Wildcards and Text Matching\n```spl\nindex=* \"*net.exe*\"                    # Find ANY event containing net.exe\nindex=* \"192.168\"                      # Find ANY event with this IP pattern\nindex=* \"powershell\" (NOT \"*net.exe*\")   # Find powershell but exclude net.exe\nindex=* \"HOST123\" \"*cmd.exe*\"          # Find cmd.exe on specific host\n```\nWith the (NOT) you can actually keep having many different things (NOT SOMEA) (NOT SOMEB) etc etc. You dont have to be perfectly; just functional. Espciailly when you want to quickly cunt down on things\n\nThe same can be done with AND OR etc or other things, as splunk can be very intutive in allowing you to use plaintext to filter as long as you be ",
+      "scores": {
+        "novelty": 0.0108,
+        "health": 0.0,
+        "relevance": 0.829,
+        "author_rep": 0.0,
+        "gem_score": 0.0
+      },
+      "concepts": [
+        "index",
+        "-",
+        "spl index",
+        "eventcode",
+        "image",
+        "index source",
+        "spl",
+        "source"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "hacking",
+      "data",
+      "phising",
+      "hack"
+    ],
+    "custom_queries": [],
+    "days": 50,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 1000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC.",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "hacking",
+      "data",
+      "phising",
+      "hack"
+    ],
+    "days": 50,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 2,
+    "probed": 2,
+    "selected": 2,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "GirijaShankar69/Cybersecurity-Internship-Program-2025",
+        "url": "https://github.com/GirijaShankar69/Cybersecurity-Internship-Program-2025",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.0123,
+        "relevance": 0.8357,
+        "health_score": 0.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "### week",
+          "week -",
+          "-",
+          "###",
+          "week",
+          "--- ##",
+          "---",
+          "privilege escalation"
+        ],
+        "gem_score": 0.0
+      },
+      {
+        "name": "ThatTotallyRealMyth/GhostHuntingInSplunk",
+        "url": "https://github.com/ThatTotallyRealMyth/GhostHuntingInSplunk",
+        "license": "MIT",
+        "role": "module (NA)",
+        "novelty_score": 0.0108,
+        "relevance": 0.829,
+        "health_score": 0.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "index",
+          "-",
+          "spl index",
+          "eventcode",
+          "image",
+          "index source",
+          "spl",
+          "source"
+        ],
+        "gem_score": 0.0
+      }
+    ],
+    "architecture_ascii": "[1] GirijaShankar69/Cybersecurity-Internship-Program-2025  →  [2] ThatTotallyRealMyth/GhostHuntingInSplunk\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "hacking",
+        "data",
+        "phising",
+        "hack"
+      ],
+      "days": 50,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 2,
+      "probed": 2,
+      "selected": 2,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

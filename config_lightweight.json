@@ -1,0 +1,40 @@
+{
+  "topics": [
+    "protocol",
+    "penetration",
+    "monitor",
+    "cyber security"
+  ],
+  "custom_queries": [],
+  "goal": "a new protocol for penetration system",
+  "days": 180,
+  "licenses": [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "GPL-3.0",
+    "GPL-2.0",
+    "LGPL-3.0",
+    "MPL-2.0",
+    "ISC",
+    "Unlicense",
+    "0BSD"
+  ],
+  "min_health": 0.1,
+  "max": 20,
+  "probe_limit": 20,
+  "use_embeddings": true,
+  "embedding_model": "thenlper/gte-small",
+  "explore_longtail": false,
+  "max_stars": 1000,
+  "require_ci": false,
+  "require_tests": false,
+  "authorsig": false,
+  "w_novelty": 0.35,
+  "w_health": 0.25,
+  "w_relevance": 0.25,
+  "w_diversity": 0.15,
+  "exclude_processed": true,
+  "skip_llm_insertion": true
+}

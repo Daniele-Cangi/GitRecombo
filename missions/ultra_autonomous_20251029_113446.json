@@ -1,0 +1,953 @@
+{
+  "timestamp": "2025-10-29T11:34:46.852094",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a self-hosted, privacy-preserving PC protection and traceback stack that: (1) blocks phishing and intrusion attempts at the host edge, (2) decoys and records attacker behavior for attribution, and (3) triages suspicious artifacts with light machine learning-driven prioritization. Concretely: use SafeLine (Go WAF) inline as a local smart proxy, frp to expose ephemeral honeypots and collect telemetry, StevenBlack/hosts to harden DNS-level blocking, a Node.js control plane (hackathon-starter + Bootstrap UI) for policy and evidence, and a Python analysis worker that leverages Triton (binary analysis), jadx (APK decompilation), and selected ctf-tools. A light ML layer (skfolio) fuses indicators into a risk score that drives automated actions. Success: block ≥90% known phishing domains pre-click, reduce mean triage time to <5 minutes, and derive reproducible IOCs to pinpoint infrastructure behind attacks. Why it matters: it transforms a single PC from a passive target into an active, evidence-producing sensor without sacrificing usability or privacy.",
+  "repository_synergy": "The insight: treat your PC like a micro-sensor plus micro-honeynet. Most consumer defenses end at block/allow; they rarely produce attribution-grade evidence. By combining a WAF (SafeLine) with frp’s NAT traversal, we can safely expose decoy surfaces when needed and capture attacker behavior. Then, repurpose portfolio optimization (skfolio) as a lightweight ML fusion engine to prioritize risk across heterogeneous signals. The result is a personal defense-and-traceback loop that is unusually rich for a single endpoint.\n\nWhy these repos: SafeLine is a high-performance Go WAF with a rule engine we can deploy locally, giving us HTTP inspection and mitigation without a cloud dependency. frp gives us precise, on-demand tunnels that turn your PC into a controlled honeypot, capturing attacker metadata on your terms. StevenBlack/hosts provides a hard, low-friction DNS shield that blocks a huge tail of phishing and malware domains—even before SafeLine sees them. sahat/hackathon-starter accelerates a production-grade dashboard—auth, sessions, routes—so we can focus on security logic, while Bootstrap gives a clean operator UI. Triton is the rare open framework that supports dynamic binary analysis and symbolic execution from Python—perfect to extract IOCs from suspect binaries without shipping data elsewhere. jadx brings fast APK decompilation to demystify Android phishing droppers. zardus/ctf-tools offers an on-ramp to vetted analysis utilities (oletools, binwalk, exiftool, radare2) via one consistent interface. ohmyzsh provides an operator-friendly CLI and repeatable workflows. lucko/spark adds pragmatic, low-overhead profiling of Java processes—handy when a malware sample spins a JVM. KasperskyLab/hrtng complements reverse engineering if you already have IDA.\n\nThe synergy: SafeLine sits as a local outbound/inbound HTTP proxy, enforcing smart rules (e.g., block suspicious TLDs, inspect URIs for known phishing patterns) while StevenBlack/hosts blocks known-bad domains outright. When an intrusion is suspected (e.g., repeated credential stuffing or RDP scans detected via logs), frp spins up an ephemeral decoy service under SafeLine’s umbrella. All events—click attempts, blocked domains, honeypot hits—flow to the Node control plane. There, the skfolio-based risk layer treats each indicator as a factor and computes a normalized risk score that drives actions: quarantine, deeper analysis with Triton/jadx, or auto-block rules. The ctf-tools sandbox provides dependable, scriptable runners for one-off artifact checks without retooling.\n\nThe bridge: we integrate via thin adapters instead of inventing new systems. SafeLine exposes logs and rule updates over files or HTTP; the dashboard pulls and pushes them. frp is driven by a minimal CLI controller that the dashboard calls. The analysis worker uses Python to orchestrate Triton and jadx and to launch ctf-tools runners. ohmyzsh glues it together for power users with a consistent CLI experience. This combination lets a single machine punch above its weight: it blocks, decoys, analyzes, and attributes—locally and legally—without relying on heavyweight SIEMs or closed clouds.",
+  "technical_architecture": "Components and flow:\n\n1) Edge Shield (local):\n- SafeLine (Go) runs as a local HTTP/HTTPS proxy on 127.0.0.1:8080. Outbound web traffic is routed through it via system proxy settings. For inbound decoys, SafeLine fronts specified ports as a reverse proxy to local honeypot services. Its rule engine enforces: domain/TLD allowlists, URL pattern checks, content-type gating, and body-length heuristics. It emits JSON logs.\n- StevenBlack/hosts updater (Python microservice) refreshes unified hosts lists on a schedule, merging with locally generated IOCs. It writes atomically to the hosts file and offers a dry-run mode.\n\n2) Decoy/Attribution Plane:\n- frp client (frpc) runs locally. When risk is elevated (e.g., repeated probing), the control plane asks frpc to open a short-lived public tunnel to a local decoy service (HTTP login form, fake RDP banner, etc.) that is always behind SafeLine. We tag each tunnel with a unique ID and inject a canary in the response to link later events to a specific campaign.\n- Honeypot services are minimal containers or local processes. An ultra-light default is an Express-based fake login (reusing hackathon-starter’s stack) guarded by SafeLine rules to avoid real compromise while logging IPs, headers, timings, and behavior sequences.\n\n3) Control Plane and UI:\n- sahat/hackathon-starter (Node/Express) provides auth, sessions, and routes. We add modules: Policy API (CRUD for SafeLine rules), Evidence API (event ingestion from SafeLine/frp), Actions API (start/stop frp tunnels, switch SafeLine profiles), and Analysis API (enqueue/monitor artifact analysis).\n- UI uses Bootstrap components for incident cards, risk gauges, and a traffic timeline. Operators can one-click: block domain, launch decoy, submit artifact, or export IOCs.\n- Storage: use hackathon-starter’s built-in Mongo integration or a simple local JSONL store if you prefer zero dependencies. Evidence and IOCs are append-only for auditability.\n\n4) Analysis Worker (Python):\n- Binary triage via Triton: sandboxed execution with syscall/API-hook patterns; we cap execution time and instruction count to stay light. We extract domains, IPs, registry keys, mutex names, and suspicious strings, producing IOC bundles.\n- Android triage via jadx: decompile suspected APKs; scan for hardcoded endpoints and suspicious permissions; output human-readable summaries and endpoints.\n- ctf-tools orchestrator: thin wrapper scripts to run specific tools (e.g., oletools on Office docs, exiftool for metadata) and normalize outputs to JSON.\n- Risk fusion via skfolio: treat each feature (domain age proxy, URL lexical flags, file entropy, packer flags, SafeLine rule triggers, canary hits) as a factor portfolio. We fit a simple mean-variance model per user (no PII), constraining weights and penalizing noisy factors. The resulting score in [0,1] drives automation thresholds; this is the “light ML.”\n\n5) Operator CLI:\n- ohmyzsh plugin exposes commands: pcguardian status, pcguardian block <domain>, pcguardian decoy up, pcguardian analyze <path>, pcguardian risk tail. go-cursor-help improves CLI UX (cursor visibility and clean progress handling) for long-running analyses.\n\n6) Optional specialized modules:\n- lucko/spark agent can attach to a suspicious Java PID to capture stack samples and GC/network patterns. If SafeLine flags unusual Java HTTP traffic, we trigger short sampling and surface summaries in the dashboard.\n- KasperskyLab/hrtng integration as an export: if the operator uses IDA Pro, we export artifacts in a format the plugin understands for deeper static RE.\n\nAPIs and integration:\n- SafeLine integration via its config files and HTTP endpoints (where available). The dashboard posts rule changes and tails logs via a file watcher.\n- frp controlled via its config and a process manager. Each tunnel is a typed resource with TTL and labels.\n- Analysis Worker exposes a local HTTP queue endpoint that the dashboard posts artifacts to; results are pushed back via webhook or polled.\n\nPerformance and safety:\n- All heavy analysis is opt-in and time-bounded. We default to static scans first, and only escalate to Triton symbolic steps if initial signals exceed a threshold.\n- Hosts updates are atomic and validated; we keep a rollback file.\n- SafeLine runs with conservative defaults; decoy endpoints are isolated and write-only for logs.\n- We batch risk computations; skfolio models are re-fitted nightly on local evidence to self-calibrate without external data.\n\nNon-obvious optimizations:\n- Two-phase tunnel: frp pre-reserves a port, but SafeLine only admits traffic after a 5-second warmup while canaries and correlation IDs are injected, ensuring logs tie unambiguously to the right run.\n- Rule learning-lite: when multiple incidents share newly extracted IOCs, we auto-suggest SafeLine rule patches and hosts entries with confidence scores from the portfolio weights.\n- Jadx selective decompilation: only decompile packages with network permissions; otherwise parse manifest and strings to save time.",
+  "expected_impact": "Use cases:\n\n1) Click-safe browsing for high-risk links: A user receives a suspicious URL. Opening it routes via SafeLine; if pattern-triggered, the dashboard renders a risk banner. With one click, the operator opens a decoy via frp to safely observe server behavior (redirects, form logic) without touching the real browser, capturing IPs and headers for attribution.\n\n2) Inline phishing block-at-source: The unified hosts file already null-routes many phishing domains. SafeLine’s outbound proxy adds URI-level filters catching subtle lookalikes (e.g., homoglyphs or login endpoints with known bait paths). The system logs what was blocked and offers one-click allow for false positives.\n\n3) Endpoint intrusion decoy: Repeated inbound probe patterns (e.g., RDP scans observed in local logs or router alerts mirrored to the dashboard) trigger an ephemeral frp tunnel to a decoy service. The decoy records credential attempts and tooling signatures (unique User-Agent, timing). Evidence ties to a correlation ID so you can later pivot on IPs and ASNs.\n\n4) Attachment triage without cloud upload: A suspicious executable or APK is dropped into a watched folder. The analysis worker runs Triton/jadx and chosen ctf-tools, extracts domains and strings, then proposes SafeLine rules and hosts entries. The operator reviews and accepts with a button.\n\n5) Java malware spike diagnosis: SafeLine flags odd outbound POSTs from a Java process. The system attaches lucko/spark briefly to capture stack and net hotspots, confirming a malicious HTTP client loop. Risk spikes, the process is quarantined (operator-confirmed), and IOCs are logged.\n\n6) Evidence packaging for reporting: With collected headers, IPs, and IOCs, the dashboard produces a time-ordered incident dossier (JSON and PDF) suitable for abuse desks or law enforcement. It includes reproducible steps using only local tools.\n\n7) Progressive rule hardening: As multiple incidents accumulate, the skfolio-driven factor weights surface which signals were most predictive for you (e.g., TLD types, timing patterns). The dashboard suggests incremental SafeLine rule patches tailored to your environment.\n\nScalability/extensibility:\n- Everything works offline once repos are pulled; analyses are local. On stronger machines, increase time caps for deeper Triton paths or broader jadx scans.\n- The design is additive: add new ctf-tools scripts without changing the core. SafeLine rules are composable. frp supports multiple decoy tunnels in parallel if you expand beyond a single PC.\n\nLimitations and mitigations:\n- Symbolic execution is inherently heavy; we cap it strictly and rely on static heuristics first. The operator can opt-in for deeper runs.\n- System-level modifications (hosts, proxy settings) require admin privileges; the installer includes clear rollback steps and a safe-mode profile.\n- Attribution to a human is not guaranteed; we frame “tracking down” as infrastructure attribution (IPs, ASNs, hosting, campaign linkage) and evidence quality, not personal identity. We provide abuse-report-ready outputs instead of vigilante actions.",
+  "innovation_analysis": "Innovation score: 8.2/10. Repurposing a finance portfolio optimizer (skfolio) as a light, explainable risk fusion engine for endpoint security is an unusual but effective twist. Combining SafeLine’s WAF semantics with frp-controlled ephemeral honeypots on a single PC creates a compact defense-and-attribution loop rarely seen outside enterprise labs. Triton/jadx/ctf-tools bring serious analysis without cloud reliance.\n\nNext steps:\n- Milestone 1 (1–2 days): Stand up hackathon-starter dashboard (local only), integrate Bootstrap UI, add Evidence and Policy APIs, wire SafeLine as local proxy, and schedule hosts updates.\n- Milestone 2 (3–5 days): Implement frp controller, basic decoy service, log ingestion, and risk scoring prototype with skfolio.\n- Milestone 3 (1–2 weeks): Add analysis worker (Triton, jadx, selected ctf-tools), IOC-to-rule suggestions, and incident export.\n\nKey metrics:\n- Pre-click block rate; false-positive rate; median triage time; IOC yield (unique domains/IPs per artifact); decoy engagement rate; time-to-frp tunnel.\n\nEssential tools/frameworks (from repos): SafeLine (Go), frp (Go), hackathon-starter (Node/Express), Bootstrap, Triton (Python/C++), jadx (Java), ctf-tools (shell installers), skfolio (Python), StevenBlack/hosts (Python).",
+  "sources": [
+    {
+      "name": "twbs/bootstrap",
+      "url": "https://github.com/twbs/bootstrap",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <a href=\"https://getbootstrap.com/\">\n    <img src=\"https://getbootstrap.com/docs/5.3/assets/brand/bootstrap-logo-shadow.png\" alt=\"Bootstrap logo\" width=\"200\" height=\"165\">\n  </a>\n</p>\n\n<h3 align=\"center\">Bootstrap</h3>\n\n<p align=\"center\">\n  Sleek, intuitive, and powerful front-end framework for faster and easier web development.\n  <br>\n  <a href=\"https://getbootstrap.com/docs/5.3/\"><strong>Explore Bootstrap docs »</strong></a>\n  <br>\n  <br>\n  <a href=\"https://github.com/twbs/bootstrap/issues/new?assignees=-&labels=bug&template=bug_report.yml\">Report bug</a>\n  ·\n  <a href=\"https://github.com/twbs/bootstrap/issues/new?assignees=&labels=feature&template=feature_request.yml\">Request feature</a>\n  ·\n  <a href=\"https://blog.getbootstrap.com/\">Blog</a>\n</p>\n\n\n## Bootstrap 5\n\nOur default branch is for development of our Bootstrap 5 release. Head to the [`v4-dev` branch](https://github.com/twbs/bootstrap/tree/v4-dev) to view the readme, documentation, and source code for Bootstrap 4.\n\n\n## Table of contents\n\n- [Quick start](#quick-start)\n- [Status](#status)\n- [What’s included](#whats-included)\n- [Bugs and feature requests](#bugs-and-feature-requests)\n- [Documentation](#documentation)\n- [Contributing](#contributing)\n- [Community](#community)\n- [Versioning](#versioning)\n- [Creators](#creators)\n- [Thanks](#thanks)\n- [Copyright and license](#copyright-and-license)\n\n\n## Quick start\n\nSeveral quick start options are available:\n\n- [Download the latest release](https://github.com/twbs/bootstrap/archive/v5.3.8.zip)\n- Clone the repo: `git clone https://github.com/twbs/bootstrap.git`\n- Install with [npm](https://www.npmjs.com/): `npm install bootstrap@v5.3.8`\n- Install with [yarn](https://yarnpkg.com/): `yarn add bootstrap@v5.3.8`\n- Install with [Bun](https://bun.sh/): `bun add bootstrap@v5.3.8`\n- Install with [Composer](https://getcomposer.org/): `composer require twbs/bootstrap:5.3.8`\n- Install with [NuGet](https://www.nuget.org/): CSS: `Install-Package bootstrap` ",
+      "scores": {
+        "novelty": 0.6624,
+        "health": 0.75,
+        "relevance": 0.7961,
+        "author_rep": 0.0,
+        "gem_score": 0.7684
+      },
+      "concepts": [
+        "https",
+        "-",
+        "logocolor fff",
+        "bootstrap",
+        "logo",
+        "fff https",
+        "documentation",
+        "install"
+      ]
+    },
+    {
+      "name": "yuaotian/go-cursor-help",
+      "url": "https://github.com/yuaotian/go-cursor-help",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# 🚀 Cursor Free Trial Reset Tool\n\n<div align=\"center\">\n\n[![Release](https://img.shields.io/github/v/release/yuaotian/go-cursor-help?style=flat-square&logo=github&color=blue)](https://github.com/yuaotian/go-cursor-help/releases/latest)\n[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square&logo=bookstack)](https://github.com/yuaotian/go-cursor-help/blob/master/LICENSE)\n[![Stars](https://img.shields.io/github/stars/yuaotian/go-cursor-help?style=flat-square&logo=github)](https://github.com/yuaotian/go-cursor-help/stargazers)\n\n[🌟 English](README.md) | [🌏 中文](README_CN.md) | [🌏 日本語](README_JP.md)\n\n<img src=\"https://ai-cursor.com/wp-content/uploads/2024/09/logo-cursor-ai-png.webp\" alt=\"Cursor Logo\" width=\"120\"/>\n\n\n\n</div>\n\n> ⚠️ **IMPORTANT NOTICE**\n> \n> This tool currently supports:\n> - ✅ Windows: Latest 1.0.x versions (Supported)\n> - ✅ Mac/Linux: Latest 1.0.x versions (Supported, feedback welcome)\n>\n> Please check your Cursor version before using this tool.\n\n<details open>\n<summary><b>📦 Version History & Downloads</b></summary>\n\n<div class=\"version-card\" style=\"background: linear-gradient(135deg, #6e8efb, #a777e3); border-radius: 8px; padding: 15px; margin: 10px 0; color: white;\">\n\n### 🌟 Latest Versions\n\n[View Full Version History]([CursorHistoryDown.md](https://github.com/oslook/cursor-ai-downloads?tab=readme-ov-file))\n\n</div>\n\n\n\n</details>\n\n⚠️ **General Solutions for Cursor**\n> 1.  Close Cursor, log out of your account, and delete your account in the official website Settings (refresh IP node: Japan, Singapore, USA, Hong Kong, prioritizing low latency - not necessarily required but change if conditions allow; Windows users are recommended to refresh DNS cache: `ipconfig /flushdns`)\n> Go to the Cursor official website to delete your current account\n> Steps: User avatar -> Setting -> Advanced▼ in the bottom left -> Delete Account\n>\n> 2.  Run the machine code refresh script, see the script address below, available in China\n> \n> 3.  Re-register an ",
+      "scores": {
+        "novelty": 0.5849,
+        "health": 0.75,
+        "relevance": 0.8252,
+        "author_rep": 0.0,
+        "gem_score": 0.6313
+      },
+      "concepts": [
+        "-",
+        "cursor",
+        "https",
+        "#",
+        "account",
+        "####",
+        "solution",
+        "disable"
+      ]
+    },
+    {
+      "name": "fatedier/frp",
+      "url": "https://github.com/fatedier/frp",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# frp\n\n[![Build Status](https://circleci.com/gh/fatedier/frp.svg?style=shield)](https://circleci.com/gh/fatedier/frp)\n[![GitHub release](https://img.shields.io/github/tag/fatedier/frp.svg?label=release)](https://github.com/fatedier/frp/releases)\n[![Go Report Card](https://goreportcard.com/badge/github.com/fatedier/frp)](https://goreportcard.com/report/github.com/fatedier/frp)\n[![GitHub Releases Stats](https://img.shields.io/github/downloads/fatedier/frp/total.svg?logo=github)](https://somsubhra.github.io/github-release-stats/?username=fatedier&repository=frp)\n\n[README](README.md) | [中文文档](README_zh.md)\n\n## Sponsors\n\nfrp is an open source project with its ongoing development made possible entirely by the support of our awesome sponsors. If you'd like to join them, please consider [sponsoring frp's development](https://github.com/sponsors/fatedier).\n\n<h3 align=\"center\">Gold Sponsors</h3>\n<!--gold sponsors start-->\n<div align=\"center\">\n\n## Recall.ai - API for meeting recordings\n\nIf you're looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=fatedier-frp),\n\nan API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.\n\n</div>\n<p align=\"center\">\n  <a href=\"https://requestly.com/?utm_source=github&utm_medium=partnered&utm_campaign=frp\" target=\"_blank\">\n    <img width=\"480px\" src=\"https://github.com/user-attachments/assets/24670320-997d-4d62-9bca-955c59fe883d\">\n    <br>\n    <b>Requestly - Free & Open-Source alternative to Postman</b>\n    <br>\n    <sub>All-in-one platform to Test, Mock and Intercept APIs.</sub>\n  </a>\n</p>\n<p align=\"center\">\n  <a href=\"https://go.warp.dev/frp\" target=\"_blank\">\n    <img width=\"360px\" src=\"https://raw.githubusercontent.com/warpdotdev/brand-assets/refs/heads/main/Github/Sponsor/Warp-Github-LG-01.png\">\n    <br>\n    <b>Warp, built for collaborating with AI Agents</b>\n    <br>\n\t<sub>Available for macOS, Linux and Windows</sub>\n  ",
+      "scores": {
+        "novelty": 0.5607,
+        "health": 0.75,
+        "relevance": 0.839,
+        "author_rep": 0.0,
+        "gem_score": 0.6222
+      },
+      "concepts": [
+        "https",
+        "align center",
+        "frp",
+        "version",
+        "br",
+        "p align",
+        "center href",
+        "href https"
+      ]
+    },
+    {
+      "name": "skfolio/skfolio",
+      "url": "https://github.com/skfolio/skfolio",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": ".. -*- mode: rst -*-\n\n|Licence| |Codecov| |Black| |PythonVersion| |PyPi| |CI/CD| |Downloads| |Ruff| |Contribution| |Website| |JupyterLite| |Discord| |DOI|\n\n.. |Licence| image:: https://img.shields.io/badge/License-BSD%203--Clause-blue.svg\n   :target: https://github.com/skfolio/skfolio/blob/main/LICENSE\n\n.. |Codecov| image:: https://codecov.io/gh/skfolio/skfolio/graph/badge.svg?token=KJ0SE4LHPV\n   :target: https://codecov.io/gh/skfolio/skfolio\n\n.. |PythonVersion| image:: https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg\n   :target: https://pypi.org/project/skfolio/\n\n.. |PyPi| image:: https://img.shields.io/pypi/v/skfolio\n   :target: https://pypi.org/project/skfolio\n\n.. |Black| image:: https://img.shields.io/badge/code%20style-black-000000.svg\n   :target: https://github.com/psf/black\n\n.. |CI/CD| image:: https://img.shields.io/github/actions/workflow/status/skfolio/skfolio/release.yml.svg?logo=github\n   :target: https://github.com/skfolio/skfolio/raw/main/LICENSE\n\n.. |Downloads| image:: https://static.pepy.tech/badge/skfolio\n   :target: https://pepy.tech/project/skfolio\n\n.. |Ruff| image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json\n   :target: https://github.com/astral-sh/ruff\n\n.. |Contribution| image:: https://img.shields.io/badge/Contributions-Welcome-blue\n   :target: https://github.com/skfolio/skfolio/blob/main/CONTRIBUTING.md\n\n.. |Website| image:: https://img.shields.io/website.svg?down_color=red&down_message=down&up_color=53cc0d&up_message=up&url=https://skfolio.org\n   :target: https://skfolio.org\n\n.. |JupyterLite| image:: https://jupyterlite.rtfd.io/en/latest/_static/badge.svg\n   :target: https://skfolio.org/lite\n\n.. |Discord| image:: https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white\n   :target: https://discord.gg/Bu7EtNYugS\n\n.. |DOI| image:: https://zenodo.org/badge/731792488.svg\n   :target: https://doi.org/10.5281/zenodo.1",
+      "scores": {
+        "novelty": 0.3163,
+        "health": 1.0,
+        "relevance": 0.8139,
+        "author_rep": 0.0,
+        "gem_score": 0.5951
+      },
+      "concepts": [
+        "https",
+        "..",
+        "image https",
+        "target https",
+        "-",
+        "image",
+        "target",
+        "replace"
+      ]
+    },
+    {
+      "name": "sahat/hackathon-starter",
+      "url": "https://github.com/sahat/hackathon-starter",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "![](https://lh4.googleusercontent.com/-PVw-ZUM9vV8/UuWeH51os0I/AAAAAAAAD6M/0Ikg7viJftQ/w1286-h566-no/hackathon-starter-logo.jpg)\nHackathon Starter\n=======================\n\n**Live Demo**: [Link](https://hackathon-starter-1.ydftech.com)\n\nJump to [What's new?](https://github.com/sahat/hackathon-starter/blob/master/CHANGELOG.md)\n\nA boilerplate for **Node.js** web applications.\n\nIf you have attended any hackathons in the past, then you know how much time it takes to get a project started: decide on what to build, pick a programming language, pick a web framework, pick a CSS framework. A while later, you might have an initial project up on GitHub, and only then can other team members start contributing. Or how about doing something as simple as _Sign in with Facebook_ authentication? You can spend hours on it if you are not familiar with how OAuth 2.0 works.\n\nWhen I started this project, my primary focus was on **simplicity** and **ease of use**.\nI also tried to make it as **generic** and **reusable** as possible to cover most use cases of hackathon web apps, without being too specific. In the worst case, you can use this as a learning guide for your projects, if for example you are only interested in **Sign in with Google** authentication and nothing else.\n\n### Testimonials\n\n> [**\"Nice! That README alone is already gold!\"**](https://www.producthunt.com/tech/hackathon-starter#comment-224732)<br>\n> — Adrian Le Bas\n\n> [**\"Awesome. Simply awesome.\"**](https://www.producthunt.com/tech/hackathon-starter#comment-224966)<br>\n> — Steven Rueter\n\n> [**\"I'm using it for a year now and many projects, it's an awesome boilerplate and the project is well maintained!\"**](https://www.producthunt.com/tech/hackathon-starter#comment-228610)<br>\n> — Kevin Granger\n\n> **\"Small world with Sahat's project. We were using his hackathon starter for our hackathon this past weekend and got some prizes. Really handy repo!\"**<br>\n> — Interview candidate for one of the companies I used to work with.\n\n<h4",
+      "scores": {
+        "novelty": 0.4266,
+        "health": 0.75,
+        "relevance": 0.7999,
+        "author_rep": 0.0,
+        "gem_score": 0.5641
+      },
+      "concepts": [
+        "-",
+        "https",
+        "img src",
+        "src https",
+        "height nbsp",
+        "node.js",
+        "install",
+        "- img"
+      ]
+    },
+    {
+      "name": "dcelisgarza/PortfolioOptimisers.jl",
+      "url": "https://github.com/dcelisgarza/PortfolioOptimisers.jl",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# PortfolioOptimisers.jl\n\n[![Stable Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://dcelisgarza.github.io/PortfolioOptimisers.jl/stable)\n[![Development documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://dcelisgarza.github.io/PortfolioOptimisers.jl/dev)\n[![Test workflow status](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Test.yml?query=branch%3Amain)\n[![Coverage](https://codecov.io/gh/dcelisgarza/PortfolioOptimisers.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/dcelisgarza/PortfolioOptimisers.jl)\n[![Lint workflow Status](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Lint.yml?query=branch%3Amain)\n[![Docs workflow Status](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Docs.yml/badge.svg?branch=main)](https://github.com/dcelisgarza/PortfolioOptimisers.jl/actions/workflows/Docs.yml?query=branch%3Amain)\n[![Build Status](https://api.cirrus-ci.com/github/dcelisgarza/PortfolioOptimisers.jl.svg)](https://cirrus-ci.com/github/dcelisgarza/PortfolioOptimisers.jl)\n[![DOI](https://zenodo.org/badge/DOI/FIXME)](https://doi.org/FIXME)\n[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)\n[![All Contributors](https://img.shields.io/github/all-contributors/dcelisgarza/PortfolioOptimisers.jl?labelColor=5e1ec7&color=c0ffee&style=flat-square)](#contributors)\n[![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)\n[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)\n\n## We",
+      "scores": {
+        "novelty": 0.3536,
+        "health": 0.75,
+        "relevance": 0.7835,
+        "author_rep": 0.0,
+        "gem_score": 0.5349
+      },
+      "concepts": [
+        "float64 float64",
+        "https",
+        "float64",
+        "#",
+        "prices",
+        "v",
+        "end",
+        "status https"
+      ]
+    },
+    {
+      "name": "deepfakes/faceswap",
+      "url": "https://github.com/deepfakes/faceswap",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# deepfakes_faceswap\n\n### Important information for **Patreon** and **PayPal** supporters. Please see this forum post: https://forum.faceswap.dev/viewtopic.php?f=14&t=3120\n\n<p align=\"center\">\n  <a href=\"https://faceswap.dev\"><img src=\"https://i.imgur.com/zHvjHnb.png\"></img></a>\n<br />FaceSwap is a tool that utilizes deep learning to recognize and swap faces in pictures and videos.\n</p>\n<p align=\"center\">\n<img src = \"https://i.imgur.com/nWHFLDf.jpg\"></img>\n</p>\n\n<p align=\"center\">\n<a href=\"https://www.patreon.com/bePatron?u=23238350\"><img src=\"https://c5.patreon.com/external/logo/become_a_patron_button.png\"></img></a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"https://discord.gg/FC54sYg\"><img src=\"https://i.imgur.com/gIpztkv.png\"></img></a></p>\n\n<p align=\"center\">\n  <a href=\"https://www.dailymotion.com/video/x810mot\"><img src=\"https://user-images.githubusercontent.com/36920800/178301720-b69841bb-a1ca-4c20-91db-a2a10f5692ca.png\"></img></a>\n<br />Emma Stone/Scarlett Johansson FaceSwap using the Phaze-A model\n</p>\n\n<p align=\"center\">\n  <a href=\"https://www.youtube.com/watch?v=r1jng79a5xc\"><img src=\"https://img.youtube.com/vi/r1jng79a5xc/0.jpg\"></img></a>\n<br />Jennifer Lawrence/Steve Buscemi FaceSwap using the Villain model\n</p>\n\n\n![Build Status](https://github.com/deepfakes/faceswap/actions/workflows/pytest.yml/badge.svg) [![Documentation Status](https://readthedocs.org/projects/faceswap/badge/?version=latest)](https://faceswap.readthedocs.io/en/latest/?badge=latest)\n\nMake sure you check out [INSTALL.md](INSTALL.md) before getting started.\n\n- [deepfakes\\_faceswap](#deepfakes_faceswap)\n    - [Important information for **Patreon** and **PayPal** supporters. Please see this forum post: https://forum.faceswap.dev/viewtopic.php?f=14\\&t=3120](#important-information-for-patreon-and-paypal-supporters-please-see-this-forum-post-httpsforumfaceswapdevviewtopicphpf14t3120)\n- [Manifesto](#manifesto)\n  - [FaceSwap has ethical uses.](#faceswap-has-ethical-uses)\n- [How To setup and run the proj",
+      "scores": {
+        "novelty": 0.3094,
+        "health": 0.75,
+        "relevance": 0.809,
+        "author_rep": 0.0,
+        "gem_score": 0.5291
+      },
+      "concepts": [
+        "-",
+        "https",
+        "faceswap",
+        "will",
+        "was",
+        "img src",
+        "src https",
+        "- faceswap"
+      ]
+    },
+    {
+      "name": "chaitin/SafeLine",
+      "url": "https://github.com/chaitin/SafeLine",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<p align=\"center\">\n  <img src=\"/images/banner.png\" width=\"400\" />\n</p>\n\n<h4 align=\"center\">\n  SafeLine - Make your web apps secure\n</h4>\n\n<p align=\"center\">\n  <a target=\"_blank\" href=\"https://ly.safepoint.cloud/laA8asp\">🏠 Website</a> &nbsp; | &nbsp;\n  <a target=\"_blank\" href=\"https://ly.safepoint.cloud/w2AeHhb\">📖 Docs</a> &nbsp; | &nbsp;\n  <a target=\"_blank\" href=\"https://ly.safepoint.cloud/hSMd4SH\">🔍 Live Demo</a> &nbsp; | &nbsp;\n  <a target=\"_blank\" href=\"https://discord.gg/SVnZGzHFvn\">🙋‍♂️ Discord</a> &nbsp; | &nbsp;\n  <a target=\"_blank\" href=\"/README_CN.md\">中文版</a>\n</p>\n\n## 👋 INTRODUCTION\n\nSafeLine is a self-hosted **`WAF(Web Application Firewall)`** to protect your web apps from attacks and exploits.\n\nA web application firewall helps protect web apps by filtering and monitoring HTTP traffic between a web application and the Internet. It typically protects web apps from attacks such as `SQL injection`, `XSS`, `code injection`, `os command injection`, `CRLF injection`, `ldap injection`, `xpath injection`, `RCE`, `XXE`, `SSRF`, `path traversal`, `backdoor`, `bruteforce`, `http-flood`, `bot abused`, among others.\n\n#### 💡 How It Works\n\n<img src=\"/images/how-it-works.png\" width=\"800\" />\n\nBy deploying a WAF in front of a web application, a shield is placed between the web application and the Internet. While a proxy server protects a client machine’s identity by using an intermediary, a WAF is a type of reverse-proxy, protecting the server from exposure by having clients pass through the WAF before reaching the server.\n\nA WAF protects your web apps by filtering, monitoring, and blocking any malicious HTTP/S traffic traveling to the web application, and prevents any unauthorized data from leaving the app. It does this by adhering to a set of policies that help determine what traffic is malicious and what traffic is safe. Just as a proxy server acts as an intermediary to protect the identity of a client, a WAF operates in similar fashion but acting as a reverse proxy int",
+      "scores": {
+        "novelty": 0.2661,
+        "health": 0.75,
+        "relevance": 0.8418,
+        "author_rep": 0.0,
+        "gem_score": 0.5201
+      },
+      "concepts": [
+        "img src",
+        "width /",
+        "-",
+        "img",
+        "src",
+        "web",
+        "width",
+        "/"
+      ]
+    },
+    {
+      "name": "massgravel/Microsoft-Activation-Scripts",
+      "url": "https://github.com/massgravel/Microsoft-Activation-Scripts",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<p align=\"center\"><img src=\"https://massgrave.dev/img/logo_small.png\" alt=\"MAS Logo\"></p>\r\n\r\n<h1 align=\"center\">Microsoft  Activation  Scripts (MAS)</h1>\r\n\r\n<p align=\"center\">Open-source Windows and Office activator featuring HWID, Ohook, TSforge, KMS38, and Online KMS activation methods, along with advanced troubleshooting.</p>\r\n\r\n<hr>\r\n  \r\n## How to Activate Windows / Office / Extended Updates (ESU)?\r\n\r\n### Method 1 - PowerShell ❤️\r\n\r\n1. **Open PowerShell**  \r\n   Click the **Start Menu**, type `PowerShell`, then open it.\r\n\r\n2. **Copy and paste the code below, then press enter.**  \r\n   - For **Windows 8, 10, 11**: 📌\r\n     ```\r\n     irm https://get.activated.win | iex\r\n     ```\r\n\t If the above is blocked (by ISP/DNS), try this (needs updated Windows 10 or 11):  \r\n\t ```\r\n\t iex (curl.exe -s --doh-url https://1.1.1.1/dns-query https://get.activated.win | Out-String)\r\n\t ```\r\n   - For **Windows 7** and later:\r\n     ```\r\n     iex ((New-Object Net.WebClient).DownloadString('https://get.activated.win'))\r\n     ```\r\n\t- **Script not launching❓Use the below-listed Method 2.**\r\n\r\n3. The activation menu will appear. **Choose the green-highlighted options** to activate Windows or Office.\r\n\r\n4. **Done!**\r\n\r\n---\r\n\r\n### Method 2 - Traditional (Windows Vista and later)\r\n\r\n1.   Download the script: [**MAS_AIO.cmd**](https://dev.azure.com/massgrave/Microsoft-Activation-Scripts/_apis/git/repositories/Microsoft-Activation-Scripts/items?path=/MAS/All-In-One-Version-KL/MAS_AIO.cmd&download=true) or the [full ZIP](https://dev.azure.com/massgrave/Microsoft-Activation-Scripts/_apis/git/repositories/Microsoft-Activation-Scripts/items?$format=zip).\r\n2.   Run the file named `MAS_AIO.cmd`.\r\n3.   You will see the activation options. Follow the on-screen instructions.\r\n4.   That's all.\r\n\r\n---\r\n\r\n> [!TIP]\r\n> - Some ISPs/DNS block access to our domains. You can bypass this by enabling [DNS-over-HTTPS (DoH)](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/encrypted-dns-browsers/) in",
+      "scores": {
+        "novelty": 0.5569,
+        "health": 0.25,
+        "relevance": 0.8237,
+        "author_rep": 0.0,
+        "gem_score": 0.4941
+      },
+      "concepts": [
+        "https",
+        "-",
+        "align center",
+        "windows",
+        "align",
+        "center",
+        "---",
+        "###"
+      ]
+    },
+    {
+      "name": "StevenBlack/hosts",
+      "url": "https://github.com/StevenBlack/hosts",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "**Take Note!**\n\nWith the exception of issues and PRs regarding changes to\n`hosts/data/StevenBlack/hosts`, all other issues regarding the content of the\nproduced hosts files should be made with the appropriate data source that\ncontributed the content in question. The contact information for all of the data\nsources can be found in the `hosts/data/` directory.\n\n---\n\n![Logo](https://raw.githubusercontent.com/StevenBlack/hosts/master/.github/logo.png)\n\n[![latest release](https://img.shields.io/github/release/StevenBlack/hosts)](https://github.com/StevenBlack/hosts/releases)\n[![license](https://img.shields.io/github/license/StevenBlack/hosts)](https://github.com/StevenBlack/hosts/blob/master/license.txt)\n[![repo size](https://img.shields.io/github/repo-size/StevenBlack/hosts)](https://github.com/StevenBlack/hosts)\n[![contributors](https://img.shields.io/github/contributors/StevenBlack/hosts)](https://github.com/StevenBlack/hosts/graphs/contributors)\n[![Build Status](https://img.shields.io/github/actions/workflow/status/StevenBlack/hosts/ci.yml?branch=master)](https://github.com/StevenBlack/hosts/actions/workflows/ci.yml?query=branch%3Amaster)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000)](https://github.com/python/black)\n[![commits since last release](https://img.shields.io/github/commits-since/StevenBlack/hosts/latest)](https://github.com/StevenBlack/hosts/commits/master)\n[![last commit](https://img.shields.io/github/last-commit/StevenBlack/hosts)](https://github.com/StevenBlack/hosts/commits/master)\n[![commit activity](https://img.shields.io/github/commit-activity/y/StevenBlack/hosts)](https://github.com/StevenBlack/hosts/commits/master)\n\n# Unified hosts file with base extensions\n\nThis repository consolidates several reputable `hosts` files, and merges them\ninto a unified hosts file with duplicates removed. A variety of tailored hosts\nfiles are provided.\n\n**Therefore this repository is a hosts file aggregator.**\n\n![Aggregator](https://raw",
+      "scores": {
+        "novelty": 0.2058,
+        "health": 0.75,
+        "relevance": 0.8028,
+        "author_rep": 0.0,
+        "gem_score": 0.4892
+      },
+      "concepts": [
+        "https",
+        "link",
+        "readme https",
+        "link https",
+        "link http",
+        "hosts",
+        "unified hosts",
+        "readme"
+      ]
+    },
+    {
+      "name": "ohmyzsh/ohmyzsh",
+      "url": "https://github.com/ohmyzsh/ohmyzsh",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\"><img src=\"https://ohmyzsh.s3.amazonaws.com/omz-ansi-github.png\" alt=\"Oh My Zsh\"></p>\n\nOh My Zsh is an open source, community-driven framework for managing your [zsh](https://www.zsh.org/)\nconfiguration.\n\nSounds boring. Let's try again.\n\n**Oh My Zsh will not make you a 10x developer...but you may feel like one.**\n\nOnce installed, your terminal shell will become the talk of the town _or your money back!_ With each keystroke\nin your command prompt, you'll take advantage of the hundreds of powerful plugins and beautiful themes.\nStrangers will come up to you in cafés and ask you, _\"that is amazing! are you some sort of genius?\"_\n\nFinally, you'll begin to get the sort of attention that you have always felt you deserved. ...or maybe you'll\nuse the time that you're saving to start flossing more often. 😬\n\nTo learn more, visit [ohmyz.sh](https://ohmyz.sh), follow [@ohmyzsh](https://x.com/ohmyzsh) on X (formerly\nTwitter), and join us on [Discord](https://discord.gg/ohmyzsh).\n\n[![CI](https://github.com/ohmyzsh/ohmyzsh/workflows/CI/badge.svg)](https://github.com/ohmyzsh/ohmyzsh/actions?query=workflow%3ACI)\n[![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/ohmyzsh?label=%40ohmyzsh&logo=x&style=flat)](https://twitter.com/intent/follow?screen_name=ohmyzsh)\n[![Mastodon Follow](https://img.shields.io/mastodon/follow/111169632522566717?label=%40ohmyzsh&domain=https%3A%2F%2Fmstdn.social&logo=mastodon&style=flat)](https://mstdn.social/@ohmyzsh)\n[![Discord server](https://img.shields.io/discord/642496866407284746)](https://discord.gg/ohmyzsh)\n\n<details>\n<summary>Table of Contents</summary>\n\n- [Getting Started](#getting-started)\n  - [Operating System Compatibility](#operating-system-compatibility)\n  - [Prerequisites](#prerequisites)\n  - [Basic Installation](#basic-installation)\n    - [Manual Inspection](#manual-inspection)\n- [Using Oh My Zsh](#using-oh-my-zsh)\n  - [Plugins](#plugins)\n    - [Enabling Plugins](#enabling-plugins)\n    - [Using Plugins](#u",
+      "scores": {
+        "novelty": 0.5028,
+        "health": 0.25,
+        "relevance": 0.8149,
+        "author_rep": 0.0,
+        "gem_score": 0.4719
+      },
+      "concepts": [
+        "-",
+        "https",
+        "oh my",
+        "my zsh",
+        "zsh",
+        "plugins",
+        "sh",
+        "oh"
+      ]
+    },
+    {
+      "name": "skylot/jadx",
+      "url": "https://github.com/skylot/jadx",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<img src=\"https://raw.githubusercontent.com/skylot/jadx/master/jadx-gui/src/main/resources/logos/jadx-logo.png\" width=\"64\" align=\"left\" />\n\n## JADX\n\n![Build status](https://img.shields.io/github/actions/workflow/status/skylot/jadx/build-artifacts.yml)\n![GitHub contributors](https://img.shields.io/github/contributors/skylot/jadx)\n![GitHub all releases](https://img.shields.io/github/downloads/skylot/jadx/total)\n![GitHub release (latest by SemVer)](https://img.shields.io/github/downloads/skylot/jadx/latest/total)\n![Latest release](https://img.shields.io/github/release/skylot/jadx.svg)\n[![Maven Central](https://img.shields.io/maven-central/v/io.github.skylot/jadx-core)](https://search.maven.org/search?q=g:io.github.skylot%20AND%20jadx)\n![Java 11+](https://img.shields.io/badge/Java-11%2B-blue)\n[![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)\n\n**jadx** - Dex to Java decompiler\n\nCommand line and GUI tools for producing Java source code from Android Dex and Apk files\n\n> [!WARNING]\n> Please note that in most cases **jadx** can't decompile all 100% of the code, so errors will occur.<br />\n> Check [Troubleshooting guide](https://github.com/skylot/jadx/wiki/Troubleshooting-Q&A#decompilation-issues) for workarounds.\n\n**Main features:**\n- decompile Dalvik bytecode to Java code from APK, dex, aar, aab and zip files\n- decode `AndroidManifest.xml` and other resources from `resources.arsc`\n- deobfuscator included\n\n**jadx-gui features:**\n- view decompiled code with highlighted syntax\n- jump to declaration\n- find usage\n- full text search\n- smali debugger, check [wiki page](https://github.com/skylot/jadx/wiki/Smali-debugger) for setup and usage\n\nJadx-gui key bindings can be found [here](https://github.com/skylot/jadx/wiki/JADX-GUI-Key-bindings)\n\nSee these features in action here: [jadx-gui features overview](https://github.com/skylot/jadx/wiki/jadx-gui-features-overview)\n\n<img src=\"https://user-images.githubusercontent.com/118",
+      "scores": {
+        "novelty": 0.3083,
+        "health": 0.5,
+        "relevance": 0.7678,
+        "author_rep": 0.0,
+        "gem_score": 0.4554
+      },
+      "concepts": [
+        "-",
+        "https",
+        "jadx",
+        "java",
+        "- disable",
+        "code",
+        "- don",
+        "don t"
+      ]
+    },
+    {
+      "name": "zardus/ctf-tools",
+      "url": "https://github.com/zardus/ctf-tools",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "# ctf-tools\n\nThis is a collection of setup scripts to create an install of various security research tools.\nOf course, this isn't a hard problem, but it's really nice to have them in one place that's easily deployable to new machines and so forth.\nThe install-scripts for these tools are checked every once in a while, so things should hopefully have a decent chance of working!\n\nInstallers for the following tools are included:\n\n| Category | Tool | Description |\n|----------|------|-------------|\n| binary | [angr](http://angr.io) | ![Last Build](https://img.shields.io/docker/v/ctftools/angr?label=built) Next-generation binary analysis engine from Shellphish. | <!--tool-->\n| binary | [angr-management](http://angr.io) | ![Last Build](https://img.shields.io/docker/v/ctftools/angr-management?label=built) A GUI reverse engineering and decompilation tool. | <!--tool-->\n| binary | [beef](https://github.com/beefproject/beef) | ![Last Build](https://img.shields.io/docker/v/ctftools/beef?label=built) Browser exploitation framework. | <!--tool-->\n| binary | [crosstool](http://crosstool-ng.org/) | ![Last Build](https://img.shields.io/docker/v/ctftools/crosstool?label=built) Cross-compilers and cross-architecture tools. | <!--tool--><!--no-test-->\n| binary | [cross2](http://kozos.jp/books/asm/asm.html) | ![Last Build](https://img.shields.io/docker/v/ctftools/cross2?label=built) A set of cross-compilation tools from a Japanese book on C. | <!--tool--><!--no-test-->\n| binary | [decomp2dbg](https://github.com/mahaloz/decomp2dbg) | ![Last Build](https://img.shields.io/docker/v/ctftools/decomp2dbg?label=built)  A plugin to introduce interactive symbols into your debugger from your decompiler. | <!--tool-->\n| binary | [elfkickers](http://www.muppetlabs.com/~breadbox/software/elfkickers.html) | ![Last Build](https://img.shields.io/docker/v/ctftools/elfkickers?label=built) A set of utilities for working with ELF files. | <!--tool-->\n| binary | [elfparser](https://github.com/mentebinaria/elf",
+      "scores": {
+        "novelty": 0.3936,
+        "health": 0.25,
+        "relevance": 0.8538,
+        "author_rep": 0.0,
+        "gem_score": 0.4406
+      },
+      "concepts": [
+        "https",
+        "last build",
+        "build https",
+        "label built",
+        "binary",
+        "--tool-- binary",
+        "last",
+        "build"
+      ]
+    },
+    {
+      "name": "Pointcept/Pointcept",
+      "url": "https://github.com/Pointcept/Pointcept",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n    <!-- pypi-strip -->\n    <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://raw.githubusercontent.com/pointcept/assets/main/pointcept/logo_dark.png\">\n    <source media=\"(prefers-color-scheme: light)\" srcset=\"https://raw.githubusercontent.com/pointcept/assets/main/pointcept/logo.png\">\n    <!-- /pypi-strip -->\n    <img alt=\"pointcept\" src=\"https://raw.githubusercontent.com/pointcept/assets/main/pointcept/logo.png\" width=\"400\">\n    <!-- pypi-strip -->\n    </picture><br>\n    <!-- /pypi-strip -->\n</p>\n\n[![Formatter](https://github.com/pointcept/pointcept/actions/workflows/formatter.yml/badge.svg)](https://github.com/pointcept/pointcept/actions/workflows/formatter.yml)\n\n**Pointcept** is a powerful and flexible codebase for point cloud perception research. It is also an official implementation of the following paper:\n- 🚀 **Concerto: Joint 2D-3D Self-Supervised Learning Emerges Spatial Representations**  \n*Yujia Zhang, Xiaoyang Wu, Yixing Lao, Chengyao Wang, Zhuotao Tian, Naiyan Wang, Hengshuang Zhao*   \nConference on Neural Information Processing Systems (**NeurIPS**) 2025  \n[ Pretrain ] [Concerto] - [ [Project](https://pointcept.github.io/Concerto/) ] [ [Bib](https://xywu.me/research/concerto/bib.txt) ] [ [HF Demo](https://huggingface.co/spaces/Pointcept/Concerto) ] [ [Inference](https://github.com/Pointcept/Concerto) ] [ [Weight](https://huggingface.co/Pointcept/Concerto) ] &rarr; [here](#concerto)\n\n\n- **Sonata: Self-Supervised Learning of Reliable Point Representations**  \n*Xiaoyang Wu, Daniel DeTone, Duncan Frost, Tianwei Shen, Chris Xie, Nan Yang, Jakob Engel, Richard Newcombe, Hengshuang Zhao, Julian Straub*  \nIEEE Conference on Computer Vision and Pattern Recognition (**CVPR**) 2025 - Highlight  \n[ Pretrain ] [Sonata] - [ [Project](https://xywu.me/sonata/) ] [ [arXiv](https://arxiv.org/abs/2503.16429) ] [ [Bib](https://xywu.me/research/sonata/bib.txt) ] [ [Demo](https://github.com/facebookresearch/sonata) ] [ [Weight](ht",
+      "scores": {
+        "novelty": 0.157,
+        "health": 0.5,
+        "relevance": 0.7885,
+        "author_rep": 0.0,
+        "gem_score": 0.4119
+      },
+      "concepts": [
+        "https",
+        "here",
+        "-",
+        "bib https",
+        "rarr here",
+        "hengshuang zhao",
+        "arxiv https",
+        "xiaoyang wu"
+      ]
+    },
+    {
+      "name": "facebookresearch/Aria_data_tools",
+      "url": "https://github.com/facebookresearch/Aria_data_tools",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# Aria Data Tools\n\n# /!\\ We are moving to a new repository /!\\\nThis project is now deprecated, and moving to be hosted to [facebookresearch/projectaria_tools](https://github.com/facebookresearch/projectaria_tools/).\n\nThe [Aria Pilot Dataset documentation](https://facebookresearch.github.io/Aria_data_tools/docs/pilotdata/pilotdata-index/) will continue to be hosted in the Aria Data Tools wiki *in the short term* as it uses a different file structure compared to more recent Aria open data releases.\n\n## About\n\nProject Aria makes open data and open tooling available to support researchers expand the horizons of Augmented Reality, Machine Perception and Artificial Intelligence by releasing the Aria Pilot Dataset and Aria Research Kit: Aria Data Tools.\n\n### What's Project Aria?\n\n[Project Aria](https://about.facebook.com/realitylabs/projectaria/) is a research device that collects first-person view (egocentric) data to accelerate machine perception and AI research for future AR glasses. Sensors on Project Aria capture egocentric video and audio, in addition to eye-gaze, inertial, and location information. On-device compute power is used to encrypt and store information that, when uploaded to separate designated back-end storage, helps researchers build the capabilities necessary for AR to work in the real world.\n\n![Aria multi modal sensors preview](data/aria_sensors.jpg?raw=true \"Title\")\n\n\n### What's Aria Data Tools?\n\nAria Data Tools provides C++ and Python3 tools to interact with [Project Aria](https://about.facebook.com/realitylabs/projectaria/) data to:\n\n* Read and visualize Project Aria sequences and sensor data\n* Retrieve calibration data and interact with Aria camera models\n\n\n### What's the Aria Pilot Dataset?\n\nThe Aria Pilot Dataset provides data from a variety of egocentric scenarios, including cooking, exercising, playing games and spending time with friends. This release also provides egocentric Project Aria data time-synched with a multi-view camera recording ri",
+      "scores": {
+        "novelty": 0.1497,
+        "health": 0.5,
+        "relevance": 0.8098,
+        "author_rep": 0.0,
+        "gem_score": 0.4084
+      },
+      "concepts": [
+        "aria",
+        "data",
+        "aria data",
+        "aria pilot",
+        "https",
+        "pilot dataset",
+        "project aria",
+        "data tools"
+      ]
+    },
+    {
+      "name": "JonathanSalwan/Triton",
+      "url": "https://github.com/JonathanSalwan/Triton",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<p align=\"center\"><img width=\"50%\" src=\"https://triton-library.github.io/files/triton2.png\"/></p>\n\n**Triton** is a dynamic binary analysis library. It provides internal components that allow you to build your program analysis tools,\nautomate reverse engineering, perform software verification or just emulate code.\n\n* Dynamic **symbolic** execution\n* Dynamic **taint** analysis\n* AST representation of the **x86**, **x86-64**, **ARM32**, **AArch64** and **RISC-V 32/64**  ISA semantic\n* Expressions **synthesis**\n* SMT **simplification** passes\n* **Lifting** to **LLVM** as well as **Z3** and back\n* **SMT solver** interface to **Z3** and **Bitwuzla**\n* **C++** and **Python** API\n\n<p align=\"center\">\n    <img src=\"https://triton-library.github.io/files/triton_v09_architecture.svg\" width=\"80%\"/></br>\n    <img src=\"https://triton-library.github.io/files/triton_multi_os.png\"/>\n</p>\n\nAs **Triton** is a kind of a part-time project, please, **don't blame us** if it is not fully reliable. [Open issues](https://github.com/JonathanSalwan/Triton/issues) or\n[pull requests](https://github.com/JonathanSalwan/Triton/pulls) are always better than trolling =). However, you can follow the development on twitter\n[@qb_triton](https://twitter.com/qb_triton).\n\n<p align=\"center\">\n  <a href=\"https://github.com/JonathanSalwan/Triton/actions/workflows/linux.yml/\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/JonathanSalwan/Triton/linux.yml?branch=master&label=Linux&logo=linux&logoColor=white\">\n  </a>\n  &nbsp;\n  <a href=\"https://github.com/JonathanSalwan/Triton/actions/workflows/osx.yml/\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/JonathanSalwan/Triton/osx.yml?branch=master&label=OSX&logo=apple\">\n  </a>\n  &nbsp;\n  <a href=\"https://github.com/JonathanSalwan/Triton/actions/workflows/vcpkg.yml/\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/JonathanSalwan/Triton/vcpkg.yml?branch=master&label=Windows&logo=windows&logoColor=white\">\n  ",
+      "scores": {
+        "novelty": 0.0874,
+        "health": 0.5,
+        "relevance": 0.8098,
+        "author_rep": 0.0,
+        "gem_score": 0.3884
+      },
+      "concepts": [
+        "https",
+        "src https",
+        "triton",
+        "img src",
+        "#",
+        "href https",
+        "img",
+        "src"
+      ]
+    },
+    {
+      "name": "lucko/spark",
+      "url": "https://github.com/lucko/spark",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<h1 align=\"center\">\n\t<img\n\t\talt=\"spark\"\n\t\tsrc=\"https://i.imgur.com/ykHn9vx.png\">\n</h1>\n\n<h3 align=\"center\">\n  spark is a performance profiler for Minecraft clients, servers and proxies.\n</h3>\n\n#### Useful Links\n* [**Website**](https://spark.lucko.me/) - browse the project homepage\n* [**Documentation**](https://spark.lucko.me/docs) - read documentation and usage guides\n* [**Downloads**](https://spark.lucko.me/download) - latest plugin/mod downloads\n\n\n## What does spark do?\n\nspark is made up of three separate components:\n\n* **CPU Profiler**: Diagnose performance issues.\n* **Memory Inspection**: Diagnose memory issues.\n* **Server Health Reporting**: Keep track of overall server health.\n\n### :zap: CPU Profiler\n\nspark's profiler can be used to diagnose performance issues: \"lag\", low tick rate, high CPU usage, etc.\n\nIt is:\n\n* **Lightweight** - can be ran in production with minimal impact.\n* **Easy to use** - no configuration or setup necessary, just install the plugin/mod.\n* **Quick to produce results** - running for just ~30 seconds is enough to produce useful insights into problematic areas for performance.\n* **Customisable** - can be tuned to target specific threads, sample at a specific interval, record only \"laggy\" periods, etc\n* **Highly readable** - simple tree structure lends itself to easy analysis and interpretation. The viewer can also apply deobfuscation mappings.\n\nIt works by sampling statistical data about the systems activity, and constructing a call graph based on this data. The call graph is then displayed in an online viewer for further analysis by the user.\n\nThere are two different profiler engines:\n* Native/Async - uses the [async-profiler](https://github.com/async-profiler/async-profiler) library (*only available on Linux & macOS systems*)\n* Java - uses `ThreadMXBean`, an improved version of the popular [WarmRoast profiler](https://github.com/sk89q/WarmRoast) by sk89q.\n\n### :zap: Memory Inspection\n\nspark includes a number of tools which are useful for",
+      "scores": {
+        "novelty": 0.1258,
+        "health": 0.25,
+        "relevance": 0.8206,
+        "author_rep": 0.0,
+        "gem_score": 0.3426
+      },
+      "concepts": [
+        "-",
+        "spark",
+        "memory",
+        "https",
+        "can",
+        "how much",
+        "- how",
+        "profiler"
+      ]
+    },
+    {
+      "name": "KasperskyLab/hrtng",
+      "url": "https://github.com/KasperskyLab/hrtng",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# hrtng IDA plugin\nhrtng IDA plugin is a collection of tools, ideas and experiments I've found interesting and useful in my reversing work.\n\nSpecial thanks to following peoples for their great plugins were used as base for my work:\n  * Hex-Rays SA [ida-sdk](https://github.com/HexRaysSA/ida-sdk) examples\n  * Milan Bohacek, [hexrays_tools](https://github.com/nihilus/hexrays_tools) and [hexrays_hlight](https://hex-rays.com/contests_details/contest2016/hexlight/hexrays_hlight.py)\n  * J.C. Roberts and Alexander Pick: [IDB2PAT](https://github.com/alexander-pick/idb2pat)\n  * HexRaysDeob by [Rolf Rolles](https://hex-rays.com/blog/hex-rays-microcode-api-vs-obfuscating-compiler) and [Takahiro Haruyama](https://blogs.vmware.com/security/2019/02/defeating-compiler-level-obfuscations-used-in-apt10-malware.html)\n  * Karthik Selvaraj [Krypton plugin](https://www.hex-rays.com/contests/2012/Krypton_2012_Hex-Rays_Contest.zip) \n  * Ali Rahbar, Ali Pezeshk and Elias Bachaalany [GraphSlick plugin](https://github.com/lallousx86/GraphSlick)\n  * Markus Gaasedelen [AVX support for the Hex-Rays x64 Decompiler](https://github.com/gaasedelen/microavx)\n\nThe plugin requires Hex-Rays decompiler presence in your IDA installation.  \nOnly latest version of IDA is supported and evolves. However the plugin can be compiled with IDA SDK >= 7.3\nNew features and fixes added for the current IDA usually not well tested with old versions.\n\n## Features of the plugin:\nThere is no one place in menu where all functionality of the plugin grouped together.\nThe plugin's menu items placed closer to logically related standard IDA & Hex-Rays decompiler functions.\nMessages, menu items, popup windows and dialog boxes belong to this plugin are marked with \"`[hrt]`\" prefix.\n\n### Automation\n  * [Pull up comments from disasm to pseudocode view](doc/pull-cmt.md)\n  * [Automatic renaming local and global variables, struct members](doc/var-auto-rename.md)\n  * [Automatic enum substitution](doc/enum.md)\n  * [COM helper](doc/com-h",
+      "scores": {
+        "novelty": 0.1045,
+        "health": 0.25,
+        "relevance": 0.819,
+        "author_rep": 0.0,
+        "gem_score": 0.3333
+      },
+      "concepts": [
+        "ida",
+        "https",
+        "###",
+        "plugin",
+        "class rangeset_t",
+        "build",
+        "-",
+        "file"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "pishing",
+      "detone",
+      "deobfuscation",
+      "http",
+      "abuse"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC. Include a light machine learning",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "pishing",
+      "detone",
+      "deobfuscation",
+      "http",
+      "abuse"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 42,
+    "probed": 20,
+    "selected": 18,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "twbs/bootstrap",
+        "url": "https://github.com/twbs/bootstrap",
+        "license": "MIT",
+        "role": "module (MDX)",
+        "novelty_score": 0.6624,
+        "relevance": 0.7961,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "logocolor fff",
+          "bootstrap",
+          "logo",
+          "fff https",
+          "documentation",
+          "install"
+        ],
+        "gem_score": 0.7684
+      },
+      {
+        "name": "yuaotian/go-cursor-help",
+        "url": "https://github.com/yuaotian/go-cursor-help",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.5849,
+        "relevance": 0.8252,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "cursor",
+          "https",
+          "#",
+          "account",
+          "####",
+          "solution",
+          "disable"
+        ],
+        "gem_score": 0.6313
+      },
+      {
+        "name": "fatedier/frp",
+        "url": "https://github.com/fatedier/frp",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.5607,
+        "relevance": 0.839,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "align center",
+          "frp",
+          "version",
+          "br",
+          "p align",
+          "center href",
+          "href https"
+        ],
+        "gem_score": 0.6222
+      },
+      {
+        "name": "skfolio/skfolio",
+        "url": "https://github.com/skfolio/skfolio",
+        "license": "BSD-3-Clause",
+        "role": "module (Python)",
+        "novelty_score": 0.3163,
+        "relevance": 0.8139,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "..",
+          "image https",
+          "target https",
+          "-",
+          "image",
+          "target",
+          "replace"
+        ],
+        "gem_score": 0.5951
+      },
+      {
+        "name": "sahat/hackathon-starter",
+        "url": "https://github.com/sahat/hackathon-starter",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.4266,
+        "relevance": 0.7999,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "img src",
+          "src https",
+          "height nbsp",
+          "node.js",
+          "install",
+          "- img"
+        ],
+        "gem_score": 0.5641
+      },
+      {
+        "name": "dcelisgarza/PortfolioOptimisers.jl",
+        "url": "https://github.com/dcelisgarza/PortfolioOptimisers.jl",
+        "license": "MIT",
+        "role": "module (Julia)",
+        "novelty_score": 0.3536,
+        "relevance": 0.7835,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "float64 float64",
+          "https",
+          "float64",
+          "#",
+          "prices",
+          "v",
+          "end",
+          "status https"
+        ],
+        "gem_score": 0.5349
+      },
+      {
+        "name": "deepfakes/faceswap",
+        "url": "https://github.com/deepfakes/faceswap",
+        "license": "GPL-3.0",
+        "role": "module (Python)",
+        "novelty_score": 0.3094,
+        "relevance": 0.809,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "faceswap",
+          "will",
+          "was",
+          "img src",
+          "src https",
+          "- faceswap"
+        ],
+        "gem_score": 0.5291
+      },
+      {
+        "name": "chaitin/SafeLine",
+        "url": "https://github.com/chaitin/SafeLine",
+        "license": "GPL-3.0",
+        "role": "module (Go)",
+        "novelty_score": 0.2661,
+        "relevance": 0.8418,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "img src",
+          "width /",
+          "-",
+          "img",
+          "src",
+          "web",
+          "width",
+          "/"
+        ],
+        "gem_score": 0.5201
+      },
+      {
+        "name": "massgravel/Microsoft-Activation-Scripts",
+        "url": "https://github.com/massgravel/Microsoft-Activation-Scripts",
+        "license": "GPL-3.0",
+        "role": "module (Batchfile)",
+        "novelty_score": 0.5569,
+        "relevance": 0.8237,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "align center",
+          "windows",
+          "align",
+          "center",
+          "---",
+          "###"
+        ],
+        "gem_score": 0.4941
+      },
+      {
+        "name": "StevenBlack/hosts",
+        "url": "https://github.com/StevenBlack/hosts",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.2058,
+        "relevance": 0.8028,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "link",
+          "readme https",
+          "link https",
+          "link http",
+          "hosts",
+          "unified hosts",
+          "readme"
+        ],
+        "gem_score": 0.4892
+      },
+      {
+        "name": "ohmyzsh/ohmyzsh",
+        "url": "https://github.com/ohmyzsh/ohmyzsh",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.5028,
+        "relevance": 0.8149,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "oh my",
+          "my zsh",
+          "zsh",
+          "plugins",
+          "sh",
+          "oh"
+        ],
+        "gem_score": 0.4719
+      },
+      {
+        "name": "skylot/jadx",
+        "url": "https://github.com/skylot/jadx",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.3083,
+        "relevance": 0.7678,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "jadx",
+          "java",
+          "- disable",
+          "code",
+          "- don",
+          "don t"
+        ],
+        "gem_score": 0.4554
+      },
+      {
+        "name": "zardus/ctf-tools",
+        "url": "https://github.com/zardus/ctf-tools",
+        "license": "BSD-3-Clause",
+        "role": "module (Shell)",
+        "novelty_score": 0.3936,
+        "relevance": 0.8538,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "last build",
+          "build https",
+          "label built",
+          "binary",
+          "--tool-- binary",
+          "last",
+          "build"
+        ],
+        "gem_score": 0.4406
+      },
+      {
+        "name": "Pointcept/Pointcept",
+        "url": "https://github.com/Pointcept/Pointcept",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.157,
+        "relevance": 0.7885,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "here",
+          "-",
+          "bib https",
+          "rarr here",
+          "hengshuang zhao",
+          "arxiv https",
+          "xiaoyang wu"
+        ],
+        "gem_score": 0.4119
+      },
+      {
+        "name": "facebookresearch/Aria_data_tools",
+        "url": "https://github.com/facebookresearch/Aria_data_tools",
+        "license": "Apache-2.0",
+        "role": "module (C++)",
+        "novelty_score": 0.1497,
+        "relevance": 0.8098,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "aria",
+          "data",
+          "aria data",
+          "aria pilot",
+          "https",
+          "pilot dataset",
+          "project aria",
+          "data tools"
+        ],
+        "gem_score": 0.4084
+      },
+      {
+        "name": "JonathanSalwan/Triton",
+        "url": "https://github.com/JonathanSalwan/Triton",
+        "license": "Apache-2.0",
+        "role": "module (C++)",
+        "novelty_score": 0.0874,
+        "relevance": 0.8098,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "src https",
+          "triton",
+          "img src",
+          "#",
+          "href https",
+          "img",
+          "src"
+        ],
+        "gem_score": 0.3884
+      },
+      {
+        "name": "lucko/spark",
+        "url": "https://github.com/lucko/spark",
+        "license": "GPL-3.0",
+        "role": "module (Java)",
+        "novelty_score": 0.1258,
+        "relevance": 0.8206,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "spark",
+          "memory",
+          "https",
+          "can",
+          "how much",
+          "- how",
+          "profiler"
+        ],
+        "gem_score": 0.3426
+      },
+      {
+        "name": "KasperskyLab/hrtng",
+        "url": "https://github.com/KasperskyLab/hrtng",
+        "license": "GPL-3.0",
+        "role": "module (C++)",
+        "novelty_score": 0.1045,
+        "relevance": 0.819,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "ida",
+          "https",
+          "###",
+          "plugin",
+          "class rangeset_t",
+          "build",
+          "-",
+          "file"
+        ],
+        "gem_score": 0.3333
+      }
+    ],
+    "architecture_ascii": "[1] twbs/bootstrap  →  [2] yuaotian/go-cursor-help  →  [3] fatedier/frp  →  [4] skfolio/skfolio  →  [5] sahat/hackathon-starter  →  [6] dcelisgarza/PortfolioOptimisers.jl  →  [7] deepfakes/faceswap  →  [8] chaitin/SafeLine  →  [9] massgravel/Microsoft-Activation-Scripts  →  [10] StevenBlack/hosts  →  [11] ohmyzsh/ohmyzsh  →  [12] skylot/jadx  →  [13] zardus/ctf-tools  →  [14] Pointcept/Pointcept  →  [15] facebookresearch/Aria_data_tools  →  [16] JonathanSalwan/Triton  →  [17] lucko/spark  →  [18] KasperskyLab/hrtng\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "pishing",
+        "detone",
+        "deobfuscation",
+        "http",
+        "abuse"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 42,
+      "probed": 20,
+      "selected": 18,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

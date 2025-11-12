@@ -1,0 +1,999 @@
+{
+  "timestamp": "2025-10-29T13:34:25.686223",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a privacy-preserving, API-free geolocation engine that determines a device’s coarse-to-fine physical location by fusing multi-layer network signals, without calling third‑party geolocation APIs. The system leverages: Playwright to instrument browser-grade timing and WebRTC ICE candidates; Uptime-Kuma as a resilient scheduler/telemetry store; Sniffnet for passive packet capture and RTT fingerprinting; Hoppscotch to craft protocol probes; yt-dlp to trigger CDN edge selection with region-coded hosts; frp for optional reverse-path anchoring; React/Dioxus for UX; and javascript-algorithms for robust multilateration/optimization. Success criteria: median error ≤ 25–50 km in urban regions and ≤ 150–250 km in rural, 95th percentile fix under 20 s, zero dependence on commercial geolocation APIs, and reproducibility across ISPs/NATs. Why it matters: shifts location inference from data brokerage to locally auditable network physics—transparent, portable, and private by design.",
+  "repository_synergy": "THE INSIGHT: These repos weren’t built for geolocation—but together they can make the network itself the map. Uptime-Kuma excels at resilient scheduling and time-series metrics; Sniffnet reads the wire with precision; Playwright produces browser-grade timing, TLS/HTTP/2/3 metrics, and WebRTC ICE candidates; Hoppscotch composes multi-protocol requests; yt-dlp coerces CDNs into showing their closest edge; frp flips NAT traversal to enable reverse probing; React/Dioxus provide the UX; javascript-algorithms supplies the math glue. No one of these solves geolocation; as a set, they let us infer location from how the Internet routes to you—no API required.\n\nTHE STORY: Instead of asking a geolocation API “Where am I?”, we make distributed networks answer implicitly. CDNs and anycast DNS always steer you to a nearby PoP. If we time the handshakes (TCP/TLS/QUIC), parse PoP identifiers in headers/hostnames, and observe RTT patterns, we can triangulate location. Uptime-Kuma, designed for uptime checks, becomes a high-volume, accurate measurement orchestrator. Sniffnet’s Rust packet engine provides precise timestamps and protocol-level observability for noise reduction. Playwright’s headless Chromium yields consistent client-side timings, and exposes STUN-derived ICE candidates to differentiate private/public IP contexts. Hoppscotch gives us a programmable bench to craft HTTP/WebSocket/GraphQL/SSH probes that bypass CORS and exercise different network paths. yt-dlp forces connections to YouTube/Google video edge nodes whose hostnames and response traits leak PoP vicinity. frp sets up an optional reverse tunnel so a remote anchor can ping and traceroute to you even behind CGNAT, disambiguating misleading outbound-only latencies.\n\nTHE SYNERGY: The unexpected bridge is using Uptime-Kuma not as a mere monitor but as the distributed probe scheduler and store; it normalizes multi-target latency/availability checks and exposes history for statistical calibration. Sniffnet filters the exact flows Kuma or Playwright initiate, providing precise RTT distributions and handshake decomposition that browsers obscure. Playwright both gathers browser metrics and runs the STUN ICE trick—without a geolocation permission dialog. Hoppscotch turbocharges iteration on PoP inventories and headers to extract region codes. javascript-algorithms implements weighted least squares and robust estimators to convert latency surfaces into coordinates, with uncertainty bands. React/Dioxus then turn abstract signal stacks into transparent, explainable location inferences. \n\nTHE INNOVATION: We’re not scraping a location service; we’re measuring Internet physics and CDN economics. By composing these repos, we get a portable, auditable geolocation fabric that improves with a richer PoP catalog and better timing—but never needs an external geolocation API. It’s vendor-neutral, privacy-first, and works in constrained environments. The aha moment: Uptime-Kuma’s monitors + Sniffnet’s packet timestamps + Playwright’s browser reality create a repeatable lab that turns proxy/NAT ambiguity into solvable geometry.",
+  "technical_architecture": "Components and flows:\n- Probe Orchestrator (Uptime-Kuma): Define custom monitors as “geo-monitors”. Each monitor targets a curated set of anycast/CDN endpoints (e.g., Cloudflare probe paths, Google/YouTube static assets, Fastly test objects), running ICMP, TCP SYN, TLS handshake, and HTTP GET checks at staggered intervals. Store results in Kuma’s SQLite with timestamps, status, and per-stage latencies.\n- Passive Capture (Sniffnet): Run a companion Rust agent with BPF filters matching probe flows (by dst IP/port list). Capture kernel-level timestamps for SYN/SYN-ACK, TLS ClientHello/ServerHello, and first-HTTP-byte. Produce per-flow records: RTT, jitter, packet loss, and initial TTL clues. This denoises Kuma’s app-level times and detects middleboxes.\n- Browser-grade Tracing (Playwright): Headless Chromium scripts execute: (1) WebRTC ICE gathering to reveal reflexive candidates (public IP/port) and host candidates (LAN hints) without requesting geolocation; (2) Navigation to the same CDN endpoints to collect NavigationTiming, ResourceTiming, HTTP/2 push/HTTP/3 alt-svc, and server headers that sometimes embed PoP codes; (3) Cross-origin request exercises that real sites trigger (e.g., H/2 priorities) to mimic realistic paths.\n- Protocol Composer (Hoppscotch): Embedded developer console to craft and iterate probe requests (HTTP/WS/GraphQL), batch them, and export into Kuma monitor definitions. Operators can test new PoP endpoints live and promote to scheduled probes.\n- CDN Edge Revelation (yt-dlp): Trigger video segment fetches to force edge selection; parse verbose logs for server IPs, hostnames, and response headers that often carry edge identifiers. Feed hostnames/IPs back into the PoP resolver.\n- Optional Reverse Anchor (frp): Client establishes a reverse tunnel to a controlled cloud node. The anchor then pings/traceroutes into the client through the tunnel, measuring reverse-path and asymmetry. This resolves cases where outbound anycast hides true geography due to proxies/VPNs.\n- Inference Engine (javascript-algorithms + custom): Run weighted least squares on PoP distances inferred from RTTs: minimize Σ w_i (|x - p_i| − α*RTT_i − β)^2, where p_i are PoP coordinates, α,β are calibration parameters learned from baseline controls (median of known local loops), w_i reflect signal quality (low jitter, consistent headers). Produce a coordinate with confidence ellipse and an explanation graph.\n- UI (React/Dioxus): Web UI in React; native shell in Dioxus for offline and kiosk deployments. Views: live signals, PoP hits map, error cones, route asymmetry, ICE candidates, and a trust report (no third-party geolocation API used). \n- Plugin Bus (MCP servers): Expose the probe/inference functions as MCP tools so external controllers can orchestrate experiments programmatically, whether or not an LLM is attached.\n\nKey challenges and solutions:\n- Noise and asymmetry: Combine active (Kuma/Playwright) with passive (Sniffnet) to separate app overhead from wire latency; estimate per-endpoint α,β via rolling calibration; use median-of-medians and Huber loss for robustness.\n- CORS and cross-protocol access: Playwright runs headless to bypass browser restrictions; Hoppscotch targets server-side proxies when needed within the same host network.\n- NAT/VPN confounders: ICE candidates reveal public vs. private; frp reverse probing distinguishes actual last-mile from exit-node paths.\n- Performance: Concurrency-limited probe batches; reuse Playwright browser contexts; Sniffnet zero-copy capture; histogram aggregation; prune low-value endpoints.\n- Interfaces: Kuma’s API for monitor CRUD; Sniffnet agent over a local gRPC/IPC; Playwright scripts as Node workers; results normalized into a common schema for the inference engine.",
+  "expected_impact": "Use cases:\n1) Enterprise data residency audits: Verify that employee traffic in Paris resolves to EU PoPs, not US, by scheduled probes and reverse-path checks, with explainable evidence.\n2) Consumer VPN transparency: Show where your effective network presence is, not where the VPN claims—using ICE candidates, PoP hits, and route asymmetry.\n3) CDN placement validation: ISPs/CDNs evaluate whether customers are consistently served from intended edges; anomalies flag misconfigurations or peering shifts.\n4) Compliance in regulated sectors: Hospitals or banks prove data locality without exposing PII or calling external geolocation APIs—local-only processing with auditable logs.\n5) Offline or constrained ops: Field teams run the Dioxus app without Internet beyond a handful of public anycast endpoints; still infer approximate location from minimal probes.\n6) Web perf observability: Correlate TTFB improvements with edge proximity; identify when H/3 handshakes come from unexpected regions.\n7) Incident triage: During outages, quickly determine if traffic got re-routed to distant PoPs, explaining sudden latency spikes.\n\nScalability and extensibility: Uptime-Kuma scales monitors across fleets; probes are stateless and parallelizable; PoP catalogs can be updated incrementally. Adding new CDNs or anycast DNS providers is a data exercise, not a code rewrite. Limitations: Rural areas and high-latency links widen error bounds; CGNAT/proxying can mask reality; some CDNs obfuscate PoP IDs. Mitigations: increase endpoint diversity, use frp reverse anchors, emphasize confidence intervals, and favor passive timing with Sniffnet over application clocks.",
+  "innovation_analysis": "Innovation score: 8.7/10. It reframes geolocation as a composable measurement problem using well-maintained, widely adopted repos in novel roles: Uptime-Kuma as a probe orchestrator, Sniffnet as a precision-timing sidecar, Playwright/yt-dlp as CDN-revelation tools, and Hoppscotch for rapid PoP test development—no traditional geolocation APIs.\n\nNext steps:\n- Curate an initial PoP endpoint catalog (Cloudflare, Google/YouTube, Fastly) with coordinates and parsing rules.\n- Implement the Sniffnet sidecar filters and gRPC schema; integrate with Kuma result ingestion.\n- Build Playwright scripts for ICE collection and timing capture; wire into the orchestrator.\n- Implement the weighted least squares solver with calibration and uncertainty estimation.\n- Ship a minimal React UI showing signals, estimate, and confidence.\n\nKey metrics: median/95th percentile error (km), time-to-fix (s), probe overhead (kB), reproducibility across runs/ISPs, and share of estimates with high confidence. Essential tools: Uptime-Kuma, Sniffnet (with libpcap), Playwright, Hoppscotch, yt-dlp, frp (optional), React/Dioxus, and javascript-algorithms for the solver.",
+  "sources": [
+    {
+      "name": "ollama/ollama",
+      "url": "https://github.com/ollama/ollama",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n  <a href=\"https://ollama.com\">\n    <img alt=\"ollama\" width=\"240\" src=\"https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7\">\n  </a>\n</div>\n\n# Ollama\n\nGet up and running with large language models.\n\n### macOS\n\n[Download](https://ollama.com/download/Ollama.dmg)\n\n### Windows\n\n[Download](https://ollama.com/download/OllamaSetup.exe)\n\n### Linux\n\n```shell\ncurl -fsSL https://ollama.com/install.sh | sh\n```\n\n[Manual install instructions](https://github.com/ollama/ollama/blob/main/docs/linux.md)\n\n### Docker\n\nThe official [Ollama Docker image](https://hub.docker.com/r/ollama/ollama) `ollama/ollama` is available on Docker Hub.\n\n### Libraries\n\n- [ollama-python](https://github.com/ollama/ollama-python)\n- [ollama-js](https://github.com/ollama/ollama-js)\n\n### Community\n\n- [Discord](https://discord.gg/ollama)\n- [Reddit](https://reddit.com/r/ollama)\n\n## Quickstart\n\nTo run and chat with [Gemma 3](https://ollama.com/library/gemma3):\n\n```shell\nollama run gemma3\n```\n\n## Model library\n\nOllama supports a list of models available on [ollama.com/library](https://ollama.com/library 'ollama model library')\n\nHere are some example models that can be downloaded:\n\n| Model              | Parameters | Size  | Download                         |\n| ------------------ | ---------- | ----- | -------------------------------- |\n| Gemma 3            | 1B         | 815MB | `ollama run gemma3:1b`           |\n| Gemma 3            | 4B         | 3.3GB | `ollama run gemma3`              |\n| Gemma 3            | 12B        | 8.1GB | `ollama run gemma3:12b`          |\n| Gemma 3            | 27B        | 17GB  | `ollama run gemma3:27b`          |\n| QwQ                | 32B        | 20GB  | `ollama run qwq`                 |\n| DeepSeek-R1        | 7B         | 4.7GB | `ollama run deepseek-r1`         |\n| DeepSeek-R1        | 671B       | 404GB | `ollama run deepseek-r1:671b`    |\n| Llama 4            | 109B       | 67GB  | `ollama run llama4:scout`        |\n| Llam",
+      "scores": {
+        "novelty": 0.9216,
+        "health": 0.75,
+        "relevance": 0.7876,
+        "author_rep": 0.0,
+        "gem_score": 0.857
+      },
+      "concepts": [
+        "ollama",
+        "ollama run",
+        "run",
+        "https",
+        "###",
+        "model",
+        "shell ollama",
+        "shell"
+      ]
+    },
+    {
+      "name": "modelcontextprotocol/servers",
+      "url": "https://github.com/modelcontextprotocol/servers",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Model Context Protocol servers\n\nThis repository is a collection of *reference implementations* for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), as well as references to community-built servers and additional resources.\n\nThe servers in this repository showcase the versatility and extensibility of MCP, demonstrating how it can be used to give Large Language Models (LLMs) secure, controlled access to tools and data sources.\nTypically, each MCP server is implemented with an MCP SDK:\n\n- [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk)\n- [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk)\n- [Java MCP SDK](https://github.com/modelcontextprotocol/java-sdk)\n- [Kotlin MCP SDK](https://github.com/modelcontextprotocol/kotlin-sdk)\n- [PHP MCP SDK](https://github.com/modelcontextprotocol/php-sdk)\n- [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk)\n- [Ruby MCP SDK](https://github.com/modelcontextprotocol/ruby-sdk)\n- [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)\n- [Swift MCP SDK](https://github.com/modelcontextprotocol/swift-sdk)\n- [TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)\n\n> [!NOTE]\n> Lists in this README are maintained in alphabetical order to minimize merge conflicts when adding new items.\n\n## 🌟 Reference Servers\n\nThese servers aim to demonstrate MCP features and the official SDKs.\n\n- **[Everything](src/everything)** - Reference / test server with prompts, resources, and tools.\n- **[Fetch](src/fetch)** - Web content fetching and conversion for efficient LLM usage.\n- **[Filesystem](src/filesystem)** - Secure file operations with configurable access controls.\n- **[Git](src/git)** - Tools to read, search, and manipulate Git repositories.\n- **[Memory](src/memory)** - Knowledge graph-based persistent memory system.\n- **[Sequential Thinking](src/sequentialthinking)** - Dynamic and reflective problem-solving through thought sequences.\n- **[Time](src/time)** - Time",
+      "scores": {
+        "novelty": 0.8996,
+        "health": 0.75,
+        "relevance": 0.7866,
+        "author_rep": 0.0,
+        "gem_score": 0.7269
+      },
+      "concepts": [
+        "-",
+        "https",
+        "mcp",
+        "mcp sdk",
+        "- img",
+        "img height",
+        "height width",
+        "width src"
+      ]
+    },
+    {
+      "name": "microsoft/playwright",
+      "url": "https://github.com/microsoft/playwright",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# 🎭 Playwright\n\n[![npm version](https://img.shields.io/npm/v/playwright.svg)](https://www.npmjs.com/package/playwright) <!-- GEN:chromium-version-badge -->[![Chromium version](https://img.shields.io/badge/chromium-141.0.7390.37-blue.svg?logo=google-chrome)](https://www.chromium.org/Home)<!-- GEN:stop --> <!-- GEN:firefox-version-badge -->[![Firefox version](https://img.shields.io/badge/firefox-142.0.1-blue.svg?logo=firefoxbrowser)](https://www.mozilla.org/en-US/firefox/new/)<!-- GEN:stop --> <!-- GEN:webkit-version-badge -->[![WebKit version](https://img.shields.io/badge/webkit-26.0-blue.svg?logo=safari)](https://webkit.org/)<!-- GEN:stop --> [![Join Discord](https://img.shields.io/badge/join-discord-informational)](https://aka.ms/playwright/discord)\n\n## [Documentation](https://playwright.dev) | [API reference](https://playwright.dev/docs/api/class-playwright)\n\nPlaywright is a framework for Web Testing and Automation. It allows testing [Chromium](https://www.chromium.org/Home), [Firefox](https://www.mozilla.org/en-US/firefox/new/) and [WebKit](https://webkit.org/) with a single API. Playwright is built to enable cross-browser web automation that is **ever-green**, **capable**, **reliable** and **fast**.\n\n|          | Linux | macOS | Windows |\n|   :---   | :---: | :---: | :---:   |\n| Chromium <!-- GEN:chromium-version -->141.0.7390.37<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |\n| WebKit <!-- GEN:webkit-version -->26.0<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |\n| Firefox <!-- GEN:firefox-version -->142.0.1<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |\n\nHeadless execution is supported for all browsers on all platforms. Check out [system requirements](https://playwright.dev/docs/intro#system-requirements) for details.\n\nLooking for Playwright for [Python](https://playwright.dev/python/docs/intro), [.NET](https://playwright.dev/dotnet/docs/intro), or [Java](htt",
+      "scores": {
+        "novelty": 0.6361,
+        "health": 1.0,
+        "relevance": 0.786,
+        "author_rep": 0.0,
+        "gem_score": 0.7012
+      },
+      "concepts": [
+        "https",
+        "--",
+        "playwright",
+        "test",
+        "-- gen",
+        ".",
+        "gen",
+        "await"
+      ]
+    },
+    {
+      "name": "louislam/uptime-kuma",
+      "url": "https://github.com/louislam/uptime-kuma",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\" width=\"100%\">\n    <img src=\"./public/icon.svg\" width=\"128\" alt=\"\" />\n</div>\n\n# Uptime Kuma\n\nUptime Kuma is an easy-to-use self-hosted monitoring tool.\n\n<a target=\"_blank\" href=\"https://github.com/louislam/uptime-kuma\"><img src=\"https://img.shields.io/github/stars/louislam/uptime-kuma?style=flat\" /></a> <a target=\"_blank\" href=\"https://hub.docker.com/r/louislam/uptime-kuma\"><img src=\"https://img.shields.io/docker/pulls/louislam/uptime-kuma\" /></a> <a target=\"_blank\" href=\"https://hub.docker.com/r/louislam/uptime-kuma\"><img src=\"https://img.shields.io/docker/v/louislam/uptime-kuma/latest?label=docker%20image%20ver.\" /></a> <a target=\"_blank\" href=\"https://github.com/louislam/uptime-kuma\"><img src=\"https://img.shields.io/github/last-commit/louislam/uptime-kuma\" /></a>  <a target=\"_blank\" href=\"https://opencollective.com/uptime-kuma\"><img src=\"https://opencollective.com/uptime-kuma/total/badge.svg?label=Open%20Collective%20Backers&color=brightgreen\" /></a>\n[![GitHub Sponsors](https://img.shields.io/github/sponsors/louislam?label=GitHub%20Sponsors)](https://github.com/sponsors/louislam) <a href=\"https://weblate.kuma.pet/projects/uptime-kuma/uptime-kuma/\">\n<img src=\"https://weblate.kuma.pet/widgets/uptime-kuma/-/svg-badge.svg\" alt=\"Translation status\" />\n</a>\n\n<img src=\"https://user-images.githubusercontent.com/1336778/212262296-e6205815-ad62-488c-83ec-a5b0d0689f7c.jpg\" width=\"700\" alt=\"\" />\n\n## 🥔 Live Demo\n\nTry it!\n\nDemo Server (Location: Frankfurt - Germany): <https://demo.kuma.pet/start-demo>\n\nIt is a temporary live demo, all data will be deleted after 10 minutes. Sponsored by [Uptime Kuma Sponsors](https://github.com/louislam/uptime-kuma#%EF%B8%8F-sponsors).\n\n## ⭐ Features\n\n- Monitoring uptime for HTTP(s) / TCP / HTTP(s) Keyword / HTTP(s) Json Query / Ping / DNS Record / Push / Steam Game Server / Docker Containers\n- Fancy, Reactive, Fast UI/UX\n- Notifications via Telegram, Discord, Gotify, Slack, Pushover, Email (SMTP), and [90+ notification servi",
+      "scores": {
+        "novelty": 0.8042,
+        "health": 0.75,
+        "relevance": 0.8046,
+        "author_rep": 0.0,
+        "gem_score": 0.6983
+      },
+      "concepts": [
+        "https",
+        "-",
+        "/",
+        "img src",
+        "src https",
+        "uptime kuma",
+        "img",
+        "src"
+      ]
+    },
+    {
+      "name": "freeCodeCamp/freeCodeCamp",
+      "url": "https://github.com/freeCodeCamp/freeCodeCamp",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "[![freeCodeCamp Social Banner](https://cdn.freecodecamp.org/platform/universal/fcc_banner_new.png)](https://www.freecodecamp.org/)\n\n[![first-timers-only Friendly](https://img.shields.io/badge/first--timers--only-friendly-blue.svg)](https://www.firsttimersonly.com/)\n[![Discord](https://img.shields.io/discord/692816967895220344?logo=discord&label=Discord&color=5865F2)](https://discord.gg/PRyKn3Vbay)\n[![LFX Active Contributors](https://insights.linuxfoundation.org/api/badge/active-contributors?project=freecodecamp&repos=https://github.com/freeCodeCamp/freeCodeCamp)](https://insights.linuxfoundation.org/project/freecodecamp/repository/freecodecamp-freecodecamp)\n\n## freeCodeCamp.org's open-source codebase and curriculum\n\n[freeCodeCamp.org](https://www.freecodecamp.org) is a friendly community where you can learn to code for free. It is run by a [donor-supported 501(c)(3) charity](https://www.freecodecamp.org/donate) to help millions of busy adults transition into tech. Our community has already helped more than 100,000 people get their first developer job.\n\nOur full-stack web development and machine learning curriculum is completely free and self-paced. We have thousands of interactive coding challenges to help you expand your skills.\n\n## Table of Contents\n\n- [Certifications](#certifications)\n- [The Learning Platform](#the-learning-platform)\n- [Reporting Bugs and Issues](#reporting-bugs-and-issues)\n- [Reporting Security Issues and Responsible Disclosure](#reporting-security-issues-and-responsible-disclosure)\n- [Contributing](#contributing)\n- [Platform, Build and Deployment Status](#platform-build-and-deployment-status)\n- [License](#license)\n\n### Certifications\n\nfreeCodeCamp.org offers several free developer certifications. Each of these certifications involves building 5 required web app projects, along with hundreds of optional coding challenges to help you prepare for those projects. We estimate that each certification will take a beginner programmer around 300 hours t",
+      "scores": {
+        "novelty": 0.9777,
+        "health": 0.5,
+        "relevance": 0.7825,
+        "author_rep": 0.0,
+        "gem_score": 0.6923
+      },
+      "concepts": [
+        "https",
+        "- learn",
+        "-",
+        "learn",
+        "building",
+        "learn css",
+        "css",
+        "certifications"
+      ]
+    },
+    {
+      "name": "hoppscotch/hoppscotch",
+      "url": "https://github.com/hoppscotch/hoppscotch",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n  <a href=\"https://hoppscotch.io\">\n    <img\n      src=\"https://avatars.githubusercontent.com/u/56705483\"\n      alt=\"Hoppscotch\"\n      height=\"64\"\n    />\n  </a>\n  <h3>\n    <b>\n      Hoppscotch\n    </b>\n  </h3>\n  <b>\n    Open Source API Development Ecosystem\n  </b>\n  <p>\n\n[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen?logo=github)](CODE_OF_CONDUCT.md) [![Website](https://img.shields.io/website?url=https%3A%2F%2Fhoppscotch.io&logo=hoppscotch)](https://hoppscotch.io) [![Tests](https://github.com/hoppscotch/hoppscotch/actions/workflows/tests.yml/badge.svg)](https://github.com/hoppscotch/hoppscotch/actions) [![Tweet](https://img.shields.io/twitter/url?url=https%3A%2F%2Fhoppscotch.io%2F)](https://twitter.com/share?text=%F0%9F%91%BD%20Hoppscotch%20%E2%80%A2%20Open%20source%20API%20development%20ecosystem%20-%20Helps%20you%20create%20requests%20faster,%20saving%20precious%20time%20on%20development.&url=https://hoppscotch.io&hashtags=hoppscotch&via=hoppscotch_io)\n\n  </p>\n  <p>\n    <sub>\n      Built with ❤︎ by\n      <a href=\"https://github.com/hoppscotch/hoppscotch/graphs/contributors\">\n        contributors\n      </a>\n    </sub>\n  </p>\n  <br />\n  <p>\n    <a href=\"https://hoppscotch.io\">\n      <picture>\n        <source media=\"(prefers-color-scheme: dark)\" srcset=\"./packages/hoppscotch-common/public/images/banner-dark.png\">\n        <source media=\"(prefers-color-scheme: light)\" srcset=\"./packages/hoppscotch-common/public/images/banner-light.png\">\n        <img alt=\"Hoppscotch\" src=\"./packages/hoppscotch-common/public/images/banner-dark.png\">\n      </picture>\n    </a>\n  </p>\n</div>\n\n_We highly recommend you take a look at the [**Hoppscotch Documentation**](https://docs.hoppscotch.io) to learn more about the app._\n\n#### **Support**\n\n[![Chat on Discord](https://img.shields.io/badge/chat-Discord-7289DA?logo=discord)](https://hoppscotch.io/discord) [![Chat on Telegram](https://img.shields.io/badge/chat-Telegram-2CA5E0?logo=",
+      "scores": {
+        "novelty": 0.7538,
+        "health": 0.75,
+        "relevance": 0.8158,
+        "author_rep": 0.0,
+        "gem_score": 0.6803
+      },
+      "concepts": [
+        "-",
+        "https",
+        "request",
+        "response",
+        "resource",
+        "resource -",
+        "- set",
+        "hoppscotch"
+      ]
+    },
+    {
+      "name": "yt-dlp/yt-dlp",
+      "url": "https://github.com/yt-dlp/yt-dlp",
+      "description": "",
+      "language": "module",
+      "license": "Unlicense",
+      "readme_snippet": "<!-- MANPAGE: BEGIN EXCLUDED SECTION -->\n<div align=\"center\">\n\n[![YT-DLP](https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/.github/banner.svg)](#readme)\n\n[![Release version](https://img.shields.io/github/v/release/yt-dlp/yt-dlp?color=brightgreen&label=Download&style=for-the-badge)](#installation \"Installation\")\n[![PyPI](https://img.shields.io/badge/-PyPI-blue.svg?logo=pypi&labelColor=555555&style=for-the-badge)](https://pypi.org/project/yt-dlp \"PyPI\")\n[![Donate](https://img.shields.io/badge/_-Donate-red.svg?logo=githubsponsors&labelColor=555555&style=for-the-badge)](Maintainers.md#maintainers \"Donate\")\n[![Discord](https://img.shields.io/discord/807245652072857610?color=blue&labelColor=555555&label=&logo=discord&style=for-the-badge)](https://discord.gg/H5MNcFW63r \"Discord\")\n[![Supported Sites](https://img.shields.io/badge/-Supported_Sites-brightgreen.svg?style=for-the-badge)](supportedsites.md \"Supported Sites\")\n[![License: Unlicense](https://img.shields.io/badge/-Unlicense-blue.svg?style=for-the-badge)](LICENSE \"License\")\n[![CI Status](https://img.shields.io/github/actions/workflow/status/yt-dlp/yt-dlp/core.yml?branch=master&label=Tests&style=for-the-badge)](https://github.com/yt-dlp/yt-dlp/actions \"CI Status\")\n[![Commits](https://img.shields.io/github/commit-activity/m/yt-dlp/yt-dlp?label=commits&style=for-the-badge)](https://github.com/yt-dlp/yt-dlp/commits \"Commit History\")\n[![Last Commit](https://img.shields.io/github/last-commit/yt-dlp/yt-dlp/master?label=&style=for-the-badge&display_timestamp=committer)](https://github.com/yt-dlp/yt-dlp/pulse/monthly \"Last activity\")\n\n</div>\n<!-- MANPAGE: END EXCLUDED SECTION -->\n\nyt-dlp is a feature-rich command-line audio/video downloader with support for [thousands of sites](supportedsites.md). The project is a fork of [youtube-dl](https://github.com/ytdl-org/youtube-dl) based on the now inactive [youtube-dlc](https://github.com/blackjack4494/yt-dlc).\n\n<!-- MANPAGE: MOVE \"USAGE AND OPTIONS\" SECTION HERE -->\n\n<!-- MANP",
+      "scores": {
+        "novelty": 0.7569,
+        "health": 0.75,
+        "relevance": 0.7942,
+        "author_rep": 0.0,
+        "gem_score": 0.6784
+      },
+      "concepts": [
+        "https",
+        "style for-the-badge",
+        "--",
+        "style",
+        "for-the-badge",
+        "options",
+        "-- manpage",
+        "excluded section"
+      ]
+    },
+    {
+      "name": "facebook/react",
+      "url": "https://github.com/facebook/react",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# [React](https://react.dev/) &middot; [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/facebook/react/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/react.svg?style=flat)](https://www.npmjs.com/package/react) [![(Runtime) Build and Test](https://github.com/facebook/react/actions/workflows/runtime_build_and_test.yml/badge.svg)](https://github.com/facebook/react/actions/workflows/runtime_build_and_test.yml) [![(Compiler) TypeScript](https://github.com/facebook/react/actions/workflows/compiler_typescript.yml/badge.svg?branch=main)](https://github.com/facebook/react/actions/workflows/compiler_typescript.yml) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://legacy.reactjs.org/docs/how-to-contribute.html#your-first-pull-request)\n\nReact is a JavaScript library for building user interfaces.\n\n* **Declarative:** React makes it painless to create interactive UIs. Design simple views for each state in your application, and React will efficiently update and render just the right components when your data changes. Declarative views make your code more predictable, simpler to understand, and easier to debug.\n* **Component-Based:** Build encapsulated components that manage their own state, then compose them to make complex UIs. Since component logic is written in JavaScript instead of templates, you can easily pass rich data through your app and keep the state out of the DOM.\n* **Learn Once, Write Anywhere:** We don't make assumptions about the rest of your technology stack, so you can develop new features in React without rewriting existing code. React can also render on the server using [Node](https://nodejs.org/en) and power mobile apps using [React Native](https://reactnative.dev/).\n\n[Learn how to use React in your project](https://react.dev/learn).\n\n## Installation\n\nReact has been designed for gradual adoption from the start, and **you can use as little or as much React as you need**:\n",
+      "scores": {
+        "novelty": 0.7402,
+        "health": 0.75,
+        "relevance": 0.8008,
+        "author_rep": 0.0,
+        "gem_score": 0.6742
+      },
+      "concepts": [
+        "https",
+        "react",
+        "can",
+        ".",
+        "https //react.dev/learn",
+        "get",
+        "contributing",
+        "https //react.dev/"
+      ]
+    },
+    {
+      "name": "Snailclimb/JavaGuide",
+      "url": "https://github.com/Snailclimb/JavaGuide",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "推荐你通过在线阅读网站进行阅读，体验更好，速度更快！地址：[javaguide.cn](https://javaguide.cn/)。\n\n<div align=\"center\">\n\n[![logo](https://oss.javaguide.cn/github/javaguide/csdn/1c00413c65d1995993bf2b0daf7b4f03.png)](https://github.com/Snailclimb/JavaGuide)\n\n[GitHub](https://github.com/Snailclimb/JavaGuide) | [Gitee](https://gitee.com/SnailClimb/JavaGuide)\n\n<a href=\"https://trendshift.io/repositories/1319\" target=\"_blank\"><img src=\"https://trendshift.io/api/badge/repositories/1319\" alt=\"Snailclimb%2FJavaGuide | Trendshift\" style=\"width: 250px; height: 55px;\" width=\"250\" height=\"55\"/></a>\n\n</div>\n\n> - **面试专版**：准备 Java 面试的小伙伴可以考虑面试专版：**[《Java 面试指北 》](./docs/zhuanlan/java-mian-shi-zhi-bei.md)** (质量很高，专为面试打造，配合 JavaGuide 食用)。\n> - **知识星球**：专属面试小册/一对一交流/简历修改/专属求职指南，欢迎加入 **[JavaGuide 知识星球](./docs/about-the-author/zhishixingqiu-two-years.md)**（点击链接即可查看星球的详细介绍，一定确定自己真的需要再加入）。\n> - **使用建议** ：有水平的面试官都是顺着项目经历挖掘技术问题。一定不要死记硬背技术八股文！详细的学习建议请参考：[JavaGuide 使用建议](./docs/javaguide/use-suggestion.md)。\n> - **求个Star**：如果觉得 JavaGuide 的内容对你有帮助的话，还请点个免费的 Star，这是对我最大的鼓励，感谢各位一起同行，共勉！Github 地址：[https://github.com/Snailclimb/JavaGuide](https://github.com/Snailclimb/JavaGuide) 。\n> - **转载须知**：以下所有文章如非文首说明为转载皆为 JavaGuide 原创，转载请在文首注明出处。如发现恶意抄袭/搬运，会动用法律武器维护自己的权益。让我们一起维护一个良好的技术创作环境！\n\n<div align=\"center\">\n  <img src=\"https://oss.javaguide.cn/github/javaguide/gongzhonghaoxuanchuan.png\" style=\"margin: 0 auto;\" />  \n</div>\n\n<!-- #region home -->\n\n## 项目相关\n\n- [项目介绍](https://javaguide.cn/javaguide/intro.html)\n- [使用建议](https://javaguide.cn/javaguide/use-suggestion.html)\n- [贡献指南](https://javaguide.cn/javaguide/contribution-guideline.html)\n- [常见问题](https://javaguide.cn/javaguide/faq.html)\n\n## Java\n\n### 基础\n\n**知识点/面试题总结** : (必看:+1: )：\n\n- [Java 基础常见知识点&面试题总结(上)](./docs/java/basis/java-basic-questions-01.md)\n- [Java 基础常见知识点&面试题总结(中)](./docs/java/basis/java-basic-questions-02.md)\n- [Java 基础常见知识点&面试题总结(下)](./docs/java/basis/java-basic-questions-03.md)\n\n**重要知识点详解**：\n\n- [为什么 Java 中只有值传递？](./docs/java/basis/why-there-only-value-passing-in-java.md)\n- [",
+      "scores": {
+        "novelty": 0.8469,
+        "health": 0.5,
+        "relevance": 0.7823,
+        "author_rep": 0.0,
+        "gem_score": 0.6497
+      },
+      "concepts": [
+        "-",
+        "- java",
+        "java",
+        "java 新特性概览",
+        "https",
+        "新特性概览",
+        "面试题总结",
+        "###"
+      ]
+    },
+    {
+      "name": "GyulyVGC/sniffnet",
+      "url": "https://github.com/GyulyVGC/sniffnet",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"center\">\n<picture>\n<img alt=\"\" title=\"Sniffnet\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/header_repository.png\" width=\"95%\"/>\n</picture>\n\n<a href=\"#download\"><img alt=\"\" title=\"Download\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/badges/download.svg\"/></a>\n<a href=\"https://github.com/GyulyVGC/sniffnet/blob/main/ROADMAP.md\"><img alt=\"\" title=\"Roadmap\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/badges/roadmap.svg\"/></a>\n<a href=\"https://sniffnet.net\"><img alt=\"\" title=\"Website\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/badges/website.svg\"/></a>\n<a href=\"https://github.com/GyulyVGC/sniffnet/wiki\"><img alt=\"\" title=\"Wiki\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/badges/wiki.svg\"/></a>\n\nApplication to comfortably monitor your Internet traffic.<br>\nCross-platform. Intuitive. Reliable.\n\nTranslated in:<br>\n🇨🇳 🇩🇪 🇫🇷 🇷🇺 🇵🇹 🇪🇦 🇮🇹 🇵🇱 [+&nbsp;15&nbsp;more&nbsp;languages](https://github.com/GyulyVGC/sniffnet/issues/60)\n</div>\n\n<p>\n<picture>\n<img alt=\"\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/hr.png\" width=\"100%\"/>\n</picture>\n</p>\n\n<div align=\"center\">\n<img alt=\"\" title=\"Overview page\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/pages/overview.png\" width=\"95%\"/>\n<img alt=\"\" title=\"Inspect page\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/pages/inspect.png\" width=\"47%\"/>\n<img alt=\"\" title=\"Notifications page\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/pages/notifications.png\" width=\"47%\"/>\n<img alt=\"\" title=\"Custom theme\" src=\"https://raw.githubusercontent.com/GyulyVGC/sniffnet/main/resources/repository/pages/deep_cosmos.png\" width=\"47%\"/>\n<img alt=\"\" title=\"Thumbnail mode\" src=\"https://raw.githubusercontent.co",
+      "scores": {
+        "novelty": 0.6079,
+        "health": 0.75,
+        "relevance": 0.8248,
+        "author_rep": 0.0,
+        "gem_score": 0.6356
+      },
+      "concepts": [
+        "https",
+        "href https",
+        "src https",
+        "href",
+        "/a",
+        "img alt",
+        "img",
+        "alt"
+      ]
+    },
+    {
+      "name": "YaLTeR/niri",
+      "url": "https://github.com/YaLTeR/niri",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<h1 align=\"center\"><img alt=\"niri\" src=\"https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0\"></h1>\n<p align=\"center\">A scrollable-tiling Wayland compositor.</p>\n<p align=\"center\">\n    <a href=\"https://matrix.to/#/#niri:matrix.org\"><img alt=\"Matrix\" src=\"https://img.shields.io/badge/matrix-%23niri-blue?logo=matrix\"></a>\n    <a href=\"https://github.com/YaLTeR/niri/blob/main/LICENSE\"><img alt=\"GitHub License\" src=\"https://img.shields.io/github/license/YaLTeR/niri\"></a>\n    <a href=\"https://github.com/YaLTeR/niri/releases\"><img alt=\"GitHub Release\" src=\"https://img.shields.io/github/v/release/YaLTeR/niri?logo=github\"></a>\n</p>\n\n<p align=\"center\">\n    <a href=\"https://yalter.github.io/niri/Getting-Started.html\">Getting Started</a> | <a href=\"https://yalter.github.io/niri/Configuration%3A-Introduction.html\">Configuration</a> | <a href=\"https://github.com/YaLTeR/niri/discussions/325\">Setup&nbsp;Showcase</a>\n</p>\n\n![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)\n\n## About\n\nWindows are arranged in columns on an infinite strip going to the right.\nOpening a new window never causes existing windows to resize.\n\nEvery monitor has its own separate window strip.\nWindows can never \"overflow\" onto an adjacent monitor.\n\nWorkspaces are dynamic and arranged vertically.\nEvery monitor has an independent set of workspaces, and there's always one empty workspace present all the way down.\n\nThe workspace arrangement is preserved across disconnecting and connecting monitors where it makes sense.\nWhen a monitor disconnects, its workspaces will move to another monitor, but upon reconnection they will move back to the original monitor.\n\n## Features\n\n- Built from the ground up for scrollable tiling\n- [Dynamic workspaces](https://yalter.github.io/niri/Workspaces.html) like in GNOME\n- An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and w",
+      "scores": {
+        "novelty": 0.5654,
+        "health": 0.75,
+        "relevance": 0.8135,
+        "author_rep": 0.0,
+        "gem_score": 0.6165
+      },
+      "concepts": [
+        "https",
+        "-",
+        "niri",
+        "scrollable tiling",
+        "href https",
+        "tiling top",
+        "windows",
+        "##"
+      ]
+    },
+    {
+      "name": "fatedier/frp",
+      "url": "https://github.com/fatedier/frp",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# frp\n\n[![Build Status](https://circleci.com/gh/fatedier/frp.svg?style=shield)](https://circleci.com/gh/fatedier/frp)\n[![GitHub release](https://img.shields.io/github/tag/fatedier/frp.svg?label=release)](https://github.com/fatedier/frp/releases)\n[![Go Report Card](https://goreportcard.com/badge/github.com/fatedier/frp)](https://goreportcard.com/report/github.com/fatedier/frp)\n[![GitHub Releases Stats](https://img.shields.io/github/downloads/fatedier/frp/total.svg?logo=github)](https://somsubhra.github.io/github-release-stats/?username=fatedier&repository=frp)\n\n[README](README.md) | [中文文档](README_zh.md)\n\n## Sponsors\n\nfrp is an open source project with its ongoing development made possible entirely by the support of our awesome sponsors. If you'd like to join them, please consider [sponsoring frp's development](https://github.com/sponsors/fatedier).\n\n<h3 align=\"center\">Gold Sponsors</h3>\n<!--gold sponsors start-->\n<div align=\"center\">\n\n## Recall.ai - API for meeting recordings\n\nIf you're looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=fatedier-frp),\n\nan API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.\n\n</div>\n<p align=\"center\">\n  <a href=\"https://requestly.com/?utm_source=github&utm_medium=partnered&utm_campaign=frp\" target=\"_blank\">\n    <img width=\"480px\" src=\"https://github.com/user-attachments/assets/24670320-997d-4d62-9bca-955c59fe883d\">\n    <br>\n    <b>Requestly - Free & Open-Source alternative to Postman</b>\n    <br>\n    <sub>All-in-one platform to Test, Mock and Intercept APIs.</sub>\n  </a>\n</p>\n<p align=\"center\">\n  <a href=\"https://go.warp.dev/frp\" target=\"_blank\">\n    <img width=\"360px\" src=\"https://raw.githubusercontent.com/warpdotdev/brand-assets/refs/heads/main/Github/Sponsor/Warp-Github-LG-01.png\">\n    <br>\n    <b>Warp, built for collaborating with AI Agents</b>\n    <br>\n\t<sub>Available for macOS, Linux and Windows</sub>\n  ",
+      "scores": {
+        "novelty": 0.5508,
+        "health": 0.75,
+        "relevance": 0.8118,
+        "author_rep": 0.0,
+        "gem_score": 0.61
+      },
+      "concepts": [
+        "https",
+        "align center",
+        "frp",
+        "version",
+        "br",
+        "p align",
+        "center href",
+        "href https"
+      ]
+    },
+    {
+      "name": "DioxusLabs/dioxus",
+      "url": "https://github.com/DioxusLabs/dioxus",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<p>\n    <p align=\"center\" >\n      <!-- <img src=\"./notes/header-light-updated.svg#gh-light-mode-only\" >\n      <img src=\"./notes/header-dark-updated.svg#gh-dark-mode-only\" > -->\n      <!-- <a href=\"https://dioxuslabs.com\">\n          <img src=\"./notes/flat-splash.avif\">\n      </a> -->\n      <img src=\"./notes/splash-header-darkmode.svg#gh-dark-mode-only\" style=\"width: 80%; height: auto;\">\n      <img src=\"./notes/splash-header.svg#gh-light-mode-only\" style=\"width: 80%; height: auto;\">\n      <img src=\"./notes/image-splash.avif\">\n      <br>\n    </p>\n</p>\n<div align=\"center\">\n  <!-- Crates version -->\n  <a href=\"https://crates.io/crates/dioxus\">\n    <img src=\"https://img.shields.io/crates/v/dioxus.svg?style=flat-square\"\n    alt=\"Crates.io version\" />\n  </a>\n  <!-- Downloads -->\n  <a href=\"https://crates.io/crates/dioxus\">\n    <img src=\"https://img.shields.io/crates/d/dioxus.svg?style=flat-square\"\n      alt=\"Download\" />\n  </a>\n  <!-- docs -->\n  <a href=\"https://docs.rs/dioxus\">\n    <img src=\"https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square\"\n      alt=\"docs.rs docs\" />\n  </a>\n  <!-- CI -->\n  <a href=\"https://github.com/jkelleyrtp/dioxus/actions\">\n    <img src=\"https://github.com/dioxuslabs/dioxus/actions/workflows/main.yml/badge.svg\"\n      alt=\"CI status\" />\n  </a>\n\n  <!--Awesome -->\n  <a href=\"https://dioxuslabs.com/awesome\">\n    <img src=\"https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg\" alt=\"Awesome Page\" />\n  </a>\n  <!-- Discord -->\n  <a href=\"https://discord.gg/XgGxMSkvUM\">\n    <img src=\"https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square\" alt=\"Discord Link\" />\n  </a>\n</div>\n\n<div align=\"center\">\n  <h3>\n    <a href=\"https://dioxuslabs.com\"> Website </a>\n    <span> | </span>\n    <a href=\"https://github.com/DioxusLabs/dioxus/tree/main/examples\"> Examples </a>\n    <span> | </span>\n    <a href=\"https://dioxuslabs.com/learn/0.6/guide\"> Guide </a>\n    <span> | </span>\n    ",
+      "scores": {
+        "novelty": 0.5512,
+        "health": 0.75,
+        "relevance": 0.8006,
+        "author_rep": 0.0,
+        "gem_score": 0.6084
+      },
+      "concepts": [
+        "https",
+        "img src",
+        "href https",
+        "src",
+        "img",
+        "align center",
+        "--",
+        "div align"
+      ]
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3",
+      "url": "https://github.com/deepseek-ai/DeepSeek-V3",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<!-- markdownlint-disable first-line-h1 -->\n<!-- markdownlint-disable html -->\n<!-- markdownlint-disable no-duplicate-header -->\n\n<div align=\"center\">\n  <img src=\"https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/logo.svg?raw=true\" width=\"60%\" alt=\"DeepSeek-V3\" />\n</div>\n<hr>\n<div align=\"center\" style=\"line-height: 1;\">\n  <a href=\"https://www.deepseek.com/\"><img alt=\"Homepage\"\n    src=\"https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/badge.svg?raw=true\"/></a>\n  <a href=\"https://chat.deepseek.com/\"><img alt=\"Chat\"\n    src=\"https://img.shields.io/badge/🤖%20Chat-DeepSeek%20V3-536af5?color=536af5&logoColor=white\"/></a>\n  <a href=\"https://huggingface.co/deepseek-ai\"><img alt=\"Hugging Face\"\n    src=\"https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-DeepSeek%20AI-ffc107?color=ffc107&logoColor=white\"/></a>\n  <br>\n  <a href=\"https://discord.gg/Tc7c45Zzu5\"><img alt=\"Discord\"\n    src=\"https://img.shields.io/badge/Discord-DeepSeek%20AI-7289da?logo=discord&logoColor=white&color=7289da\"/></a>\n  <a href=\"https://github.com/deepseek-ai/DeepSeek-V2/blob/main/figures/qr.jpeg?raw=true\"><img alt=\"Wechat\"\n    src=\"https://img.shields.io/badge/WeChat-DeepSeek%20AI-brightgreen?logo=wechat&logoColor=white\"/></a>\n  <a href=\"https://twitter.com/deepseek_ai\"><img alt=\"Twitter Follow\"\n    src=\"https://img.shields.io/badge/Twitter-deepseek_ai-white?logo=x&logoColor=white\"/></a>\n  <br>\n  <a href=\"https://github.com/deepseek-ai/DeepSeek-V3/blob/main/LICENSE-CODE\"><img alt=\"Code License\"\n    src=\"https://img.shields.io/badge/Code_License-MIT-f5de53?&color=f5de53\"/></a>\n  <a href=\"https://github.com/deepseek-ai/DeepSeek-V3/blob/main/LICENSE-MODEL\"><img alt=\"Model License\"\n    src=\"https://img.shields.io/badge/Model_License-Model_Agreement-f5de53?&color=f5de53\"/></a>\n  <br>\n  <a href=\"https://arxiv.org/pdf/2412.19437\"><b>Paper Link</b>👁️</a>\n</div>\n\n## Table of Contents\n\n1. [Introduction](#1-introduction)\n2. [Model Summary](#2-model-summary)\n3. [Model Downloads](#3-mo",
+      "scores": {
+        "novelty": 0.6063,
+        "health": 0.5,
+        "relevance": 0.766,
+        "author_rep": 0.0,
+        "gem_score": 0.5586
+      },
+      "concepts": [
+        "https",
+        "model",
+        "src https",
+        "href https",
+        "img alt",
+        "/ /a",
+        "deepseek-v3",
+        "training"
+      ]
+    },
+    {
+      "name": "trekhleb/javascript-algorithms",
+      "url": "https://github.com/trekhleb/javascript-algorithms",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# JavaScript Algorithms and Data Structures\n\n> 🇺🇦 UKRAINE [IS BEING ATTACKED](https://war.ukraine.ua/) BY RUSSIAN ARMY. CIVILIANS ARE GETTING KILLED. RESIDENTIAL AREAS ARE GETTING BOMBED.\n> - Help Ukraine via:\n>   - [Serhiy Prytula Charity Foundation](https://prytulafoundation.org/en/)\n>   - [Come Back Alive Charity Foundation](https://savelife.in.ua/en/donate-en/)\n>   - [National Bank of Ukraine](https://bank.gov.ua/en/news/all/natsionalniy-bank-vidkriv-spetsrahunok-dlya-zboru-koshtiv-na-potrebi-armiyi)\n> - More info on [war.ukraine.ua](https://war.ukraine.ua/) and [MFA of Ukraine](https://twitter.com/MFA_Ukraine)\n\n<hr/>\n\n[![CI](https://github.com/trekhleb/javascript-algorithms/workflows/CI/badge.svg)](https://github.com/trekhleb/javascript-algorithms/actions?query=workflow%3ACI+branch%3Amaster)\n[![codecov](https://codecov.io/gh/trekhleb/javascript-algorithms/branch/master/graph/badge.svg)](https://codecov.io/gh/trekhleb/javascript-algorithms)\n![repo size](https://img.shields.io/github/repo-size/trekhleb/javascript-algorithms.svg)\n\nThis repository contains JavaScript based examples of many\npopular algorithms and data structures.\n\nEach algorithm and data structure has its own separate README\nwith related explanations and links for further reading (including ones\nto YouTube videos).\n\n_Read this in other languages:_\n[_简体中文_](README.zh-CN.md),\n[_繁體中文_](README.zh-TW.md),\n[_한국어_](README.ko-KR.md),\n[_日本語_](README.ja-JP.md),\n[_Polski_](README.pl-PL.md),\n[_Français_](README.fr-FR.md),\n[_Español_](README.es-ES.md),\n[_Português_](README.pt-BR.md),\n[_Русский_](README.ru-RU.md),\n[_Türkçe_](README.tr-TR.md),\n[_Italiano_](README.it-IT.md),\n[_Bahasa Indonesia_](README.id-ID.md),\n[_Українська_](README.uk-UA.md),\n[_Arabic_](README.ar-AR.md),\n[_Tiếng Việt_](README.vi-VN.md),\n[_Deutsch_](README.de-DE.md),\n[_Uzbek_](README.uz-UZ.md),\n[_עברית_](README.he-IL.md)\n\n## Data Structures\n\nA data structure is a particular way of organizing and storing data in a computer so that it can\nbe access",
+      "scores": {
+        "novelty": 0.5872,
+        "health": 0.5,
+        "relevance": 0.7911,
+        "author_rep": 0.0,
+        "gem_score": 0.5572
+      },
+      "concepts": [
+        "-",
+        "b",
+        "data",
+        "https",
+        "algorithm",
+        "data structure",
+        "tree",
+        "search"
+      ]
+    },
+    {
+      "name": "avelino/awesome-go",
+      "url": "https://github.com/avelino/awesome-go",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Awesome Go\n\n<a href=\"https://awesome-go.com/\"><img align=\"right\" src=\"https://github.com/avelino/awesome-go/raw/main/tmpl/assets/logo.png\" alt=\"awesome-go\" title=\"awesome-go\" /></a>\n\n[![Build Status](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml?query=branch%3Amain)\n[![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome)\n[![Slack Widget](https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=red)](https://gophers.slack.com/messages/awesome)\n[![Netlify Status](https://api.netlify.com/api/v1/badges/83a6dcbe-0da6-433e-b586-f68109286bd5/deploy-status)](https://app.netlify.com/sites/awesome-go/deploys)\n[![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/avelino/awesome-go/)\n[![Last Commit](https://img.shields.io/github/last-commit/avelino/awesome-go)](https://github.com/avelino/awesome-go/commits/main)\n\nWe use the _[Golang Bridge](https://github.com/gobridge/about-us/blob/master/README.md)_ community Slack for instant communication, follow the [form here to join](https://invite.slack.golangbridge.org/).\n\n<a href=\"https://www.producthunt.com/posts/awesome-go?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-awesome-go\" target=\"_blank\"><img src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=291535&theme=light\" alt=\"awesome-go - Curated list awesome Go frameworks, libraries and software | Product Hunt\" style=\"width: 250px; height: 54px;\" width=\"250\" height=\"54\" /></a>\n\n**Sponsorships:**\n\n_Special thanks to_\n\n<div align=\"center\">\n<table cellpadding=\"5\">\n<tbody align=\"center\">\n<tr>\n<td colspan=\"2\">\n<a href=\"https://bit.ly/awesome-go-workos\">\n<img src=\"https://avelino.run/sponsors/workos-logo-white-bg.svg\" width=\"200\" alt=\"WorkOS\"><br/>\n<b>Your app",
+      "scores": {
+        "novelty": 0.451,
+        "health": 0.5,
+        "relevance": 0.8371,
+        "author_rep": 0.0,
+        "gem_score": 0.518
+      },
+      "concepts": [
+        "-",
+        "https",
+        "awesome go",
+        "awesome",
+        "go",
+        "href https",
+        "src https",
+        "- database"
+      ]
+    },
+    {
+      "name": "public-apis/public-apis",
+      "url": "https://github.com/public-apis/public-apis",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Try Public APIs for free\nThe Public APIs repository is manually curated by community members like you and folks working at [APILayer](https://apilayer.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo). It includes an extensive list of public APIs from many domains that you can use for your own products. Consider it a treasure trove of APIs well-managed by the community over the years.\n\n<br >\n\n<p>\n    <a href=\"https://apilayer.com\">\n        <div>\n            <img src=\".github/cs1586-APILayerLogoUpdate2022-LJ_v2-HighRes.png\" width=\"100%\" alt=\"APILayer Logo\" />\n        </div>\n    </a>\n  </p>\n\nAPILayer is the fastest way to integrate APIs into any product. Explore [APILayer APIs](https://apilayer.com/products/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) here for your next project.\n\nJoin our [Discord server](https://discord.com/invite/hgjA78638n/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) to get updates, ask questions, get answers, random community calls, and more.\n\n<br >\n\n## APILayer APIs\n| API | Description | Call this API |\n|:---|:---|:---|\n| [IPstack](https://ipstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Locate and Identify Website Visitors by IP Address | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; height: 32px;\">](https://god.gw.postman.com/run-collection/10131015-55145132-244c-448c-8e6f-8780866e4862?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D10131015-55145132-244c-448c-8e6f-8780866e4862%26entityType%3Dcollection%26workspaceId%3D2b7498b6-6d91-4fa8-817f-608441fe42a8)|\n| [Marketstack](https://marketstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Free, easy-to-use REST API interface delivering worldwide stock market data in JSON format | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; heigh",
+      "scores": {
+        "novelty": 0.5872,
+        "health": 0.25,
+        "relevance": 0.8294,
+        "author_rep": 0.0,
+        "gem_score": 0.5028
+      },
+      "concepts": [
+        "https",
+        "yes",
+        "no",
+        "no yes",
+        "utm_source github",
+        "github utm_medium",
+        "utm_medium referral",
+        "referral utm_campaign"
+      ]
+    },
+    {
+      "name": "massgravel/Microsoft-Activation-Scripts",
+      "url": "https://github.com/massgravel/Microsoft-Activation-Scripts",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "<p align=\"center\"><img src=\"https://massgrave.dev/img/logo_small.png\" alt=\"MAS Logo\"></p>\r\n\r\n<h1 align=\"center\">Microsoft  Activation  Scripts (MAS)</h1>\r\n\r\n<p align=\"center\">Open-source Windows and Office activator featuring HWID, Ohook, TSforge, KMS38, and Online KMS activation methods, along with advanced troubleshooting.</p>\r\n\r\n<hr>\r\n  \r\n## How to Activate Windows / Office / Extended Updates (ESU)?\r\n\r\n### Method 1 - PowerShell ❤️\r\n\r\n1. **Open PowerShell**  \r\n   Click the **Start Menu**, type `PowerShell`, then open it.\r\n\r\n2. **Copy and paste the code below, then press enter.**  \r\n   - For **Windows 8, 10, 11**: 📌\r\n     ```\r\n     irm https://get.activated.win | iex\r\n     ```\r\n\t If the above is blocked (by ISP/DNS), try this (needs updated Windows 10 or 11):  \r\n\t ```\r\n\t iex (curl.exe -s --doh-url https://1.1.1.1/dns-query https://get.activated.win | Out-String)\r\n\t ```\r\n   - For **Windows 7** and later:\r\n     ```\r\n     iex ((New-Object Net.WebClient).DownloadString('https://get.activated.win'))\r\n     ```\r\n\t- **Script not launching❓Use the below-listed Method 2.**\r\n\r\n3. The activation menu will appear. **Choose the green-highlighted options** to activate Windows or Office.\r\n\r\n4. **Done!**\r\n\r\n---\r\n\r\n### Method 2 - Traditional (Windows Vista and later)\r\n\r\n1.   Download the script: [**MAS_AIO.cmd**](https://dev.azure.com/massgrave/Microsoft-Activation-Scripts/_apis/git/repositories/Microsoft-Activation-Scripts/items?path=/MAS/All-In-One-Version-KL/MAS_AIO.cmd&download=true) or the [full ZIP](https://dev.azure.com/massgrave/Microsoft-Activation-Scripts/_apis/git/repositories/Microsoft-Activation-Scripts/items?$format=zip).\r\n2.   Run the file named `MAS_AIO.cmd`.\r\n3.   You will see the activation options. Follow the on-screen instructions.\r\n4.   That's all.\r\n\r\n---\r\n\r\n> [!TIP]\r\n> - Some ISPs/DNS block access to our domains. You can bypass this by enabling [DNS-over-HTTPS (DoH)](https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-https/encrypted-dns-browsers/) in",
+      "scores": {
+        "novelty": 0.5568,
+        "health": 0.25,
+        "relevance": 0.7762,
+        "author_rep": 0.0,
+        "gem_score": 0.4825
+      },
+      "concepts": [
+        "https",
+        "-",
+        "align center",
+        "windows",
+        "align",
+        "center",
+        "---",
+        "###"
+      ]
+    },
+    {
+      "name": "ossu/computer-science",
+      "url": "https://github.com/ossu/computer-science",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\" style=\"text-align: center\">\n<img src=\"images/ossu-logo.webp\" alt=\"Open Source Society logo\"/>\n<h3>Open Source Society University</h3>\n<p>\n  Path to a free self-taught education in Computer Science!\n</p>\n<p>\n  <a href=\"https://github.com/sindresorhus/awesome\">\n    <img alt=\"Awesome\" src=\"https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg\"\n  ></a>\n  <a href=\"https://github.com/ossu/computer-science\">\n    <img alt=\"Open Source Society University - Computer Science\" src=\"https://img.shields.io/badge/OSSU-computer--science-blue.svg\"\n  ></a>\n</p>\n</div>\n\n# Contents\n\n- [Summary](#summary)\n- [Community](#community)\n- [Curriculum](#curriculum)\n- [Code of conduct](#code-of-conduct)\n- [Team](#team)\n\n# Summary\n\nThe OSSU curriculum is a **complete education in computer science** using online materials.\nIt's not merely for career training or professional development.\nIt's for those who want a proper, *well-rounded* grounding in concepts fundamental to all computing disciplines,\nand for those who have the discipline, will, and (most importantly!) good habits to obtain this education largely on their own,\nbut with support from a worldwide community of fellow learners.\n\nIt is designed according to the degree requirements of undergraduate computer science majors, minus general education (non-CS) requirements,\nas it is assumed most of the people following this curriculum are already educated outside the field of CS.\nThe courses themselves are among the very best in the world, often coming from Harvard, Princeton, MIT, etc.,\nbut specifically chosen to meet the following criteria.\n\n**Courses must**:\n- Be open for enrollment\n- Run regularly (ideally in self-paced format, otherwise running multiple times per year)\n- Be of generally high quality in teaching materials and pedagogical principles\n- Match the curricular standards of the [CS 2013](CURRICULAR_GUIDELINES.md): Curriculum Guidelines for Undergraduate Degree Progr",
+      "scores": {
+        "novelty": 0.4589,
+        "health": 0.25,
+        "relevance": 0.7641,
+        "author_rep": 0.0,
+        "gem_score": 0.4464
+      },
+      "concepts": [
+        "-",
+        "cs",
+        "https",
+        "- core",
+        "curriculum",
+        "core",
+        "computer science",
+        "- advanced"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "satellite",
+      "geolocation",
+      "dns",
+      "data",
+      "communication"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 20,
+    "explore_longtail": false,
+    "max_stars": 100000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to for geolocation without API. an evolved software to find verything and everywhere",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": false,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "satellite",
+      "geolocation",
+      "dns",
+      "data",
+      "communication"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 36,
+    "probed": 20,
+    "selected": 19,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "ollama/ollama",
+        "url": "https://github.com/ollama/ollama",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.9216,
+        "relevance": 0.7876,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "ollama",
+          "ollama run",
+          "run",
+          "https",
+          "###",
+          "model",
+          "shell ollama",
+          "shell"
+        ],
+        "gem_score": 0.857
+      },
+      {
+        "name": "modelcontextprotocol/servers",
+        "url": "https://github.com/modelcontextprotocol/servers",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.8996,
+        "relevance": 0.7866,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "mcp",
+          "mcp sdk",
+          "- img",
+          "img height",
+          "height width",
+          "width src"
+        ],
+        "gem_score": 0.7269
+      },
+      {
+        "name": "microsoft/playwright",
+        "url": "https://github.com/microsoft/playwright",
+        "license": "Apache-2.0",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.6361,
+        "relevance": 0.786,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "--",
+          "playwright",
+          "test",
+          "-- gen",
+          ".",
+          "gen",
+          "await"
+        ],
+        "gem_score": 0.7012
+      },
+      {
+        "name": "louislam/uptime-kuma",
+        "url": "https://github.com/louislam/uptime-kuma",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.8042,
+        "relevance": 0.8046,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "/",
+          "img src",
+          "src https",
+          "uptime kuma",
+          "img",
+          "src"
+        ],
+        "gem_score": 0.6983
+      },
+      {
+        "name": "freeCodeCamp/freeCodeCamp",
+        "url": "https://github.com/freeCodeCamp/freeCodeCamp",
+        "license": "BSD-3-Clause",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.9777,
+        "relevance": 0.7825,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "- learn",
+          "-",
+          "learn",
+          "building",
+          "learn css",
+          "css",
+          "certifications"
+        ],
+        "gem_score": 0.6923
+      },
+      {
+        "name": "hoppscotch/hoppscotch",
+        "url": "https://github.com/hoppscotch/hoppscotch",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.7538,
+        "relevance": 0.8158,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "request",
+          "response",
+          "resource",
+          "resource -",
+          "- set",
+          "hoppscotch"
+        ],
+        "gem_score": 0.6803
+      },
+      {
+        "name": "yt-dlp/yt-dlp",
+        "url": "https://github.com/yt-dlp/yt-dlp",
+        "license": "Unlicense",
+        "role": "module (Python)",
+        "novelty_score": 0.7569,
+        "relevance": 0.7942,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "style for-the-badge",
+          "--",
+          "style",
+          "for-the-badge",
+          "options",
+          "-- manpage",
+          "excluded section"
+        ],
+        "gem_score": 0.6784
+      },
+      {
+        "name": "facebook/react",
+        "url": "https://github.com/facebook/react",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.7402,
+        "relevance": 0.8008,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "react",
+          "can",
+          ".",
+          "https //react.dev/learn",
+          "get",
+          "contributing",
+          "https //react.dev/"
+        ],
+        "gem_score": 0.6742
+      },
+      {
+        "name": "Snailclimb/JavaGuide",
+        "url": "https://github.com/Snailclimb/JavaGuide",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.8469,
+        "relevance": 0.7823,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "- java",
+          "java",
+          "java 新特性概览",
+          "https",
+          "新特性概览",
+          "面试题总结",
+          "###"
+        ],
+        "gem_score": 0.6497
+      },
+      {
+        "name": "GyulyVGC/sniffnet",
+        "url": "https://github.com/GyulyVGC/sniffnet",
+        "license": "Apache-2.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.6079,
+        "relevance": 0.8248,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "href https",
+          "src https",
+          "href",
+          "/a",
+          "img alt",
+          "img",
+          "alt"
+        ],
+        "gem_score": 0.6356
+      },
+      {
+        "name": "YaLTeR/niri",
+        "url": "https://github.com/YaLTeR/niri",
+        "license": "GPL-3.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.5654,
+        "relevance": 0.8135,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "niri",
+          "scrollable tiling",
+          "href https",
+          "tiling top",
+          "windows",
+          "##"
+        ],
+        "gem_score": 0.6165
+      },
+      {
+        "name": "fatedier/frp",
+        "url": "https://github.com/fatedier/frp",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.5508,
+        "relevance": 0.8118,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "align center",
+          "frp",
+          "version",
+          "br",
+          "p align",
+          "center href",
+          "href https"
+        ],
+        "gem_score": 0.61
+      },
+      {
+        "name": "DioxusLabs/dioxus",
+        "url": "https://github.com/DioxusLabs/dioxus",
+        "license": "Apache-2.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.5512,
+        "relevance": 0.8006,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "img src",
+          "href https",
+          "src",
+          "img",
+          "align center",
+          "--",
+          "div align"
+        ],
+        "gem_score": 0.6084
+      },
+      {
+        "name": "deepseek-ai/DeepSeek-V3",
+        "url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.6063,
+        "relevance": 0.766,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "model",
+          "src https",
+          "href https",
+          "img alt",
+          "/ /a",
+          "deepseek-v3",
+          "training"
+        ],
+        "gem_score": 0.5586
+      },
+      {
+        "name": "trekhleb/javascript-algorithms",
+        "url": "https://github.com/trekhleb/javascript-algorithms",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.5872,
+        "relevance": 0.7911,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "b",
+          "data",
+          "https",
+          "algorithm",
+          "data structure",
+          "tree",
+          "search"
+        ],
+        "gem_score": 0.5572
+      },
+      {
+        "name": "avelino/awesome-go",
+        "url": "https://github.com/avelino/awesome-go",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.451,
+        "relevance": 0.8371,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "awesome go",
+          "awesome",
+          "go",
+          "href https",
+          "src https",
+          "- database"
+        ],
+        "gem_score": 0.518
+      },
+      {
+        "name": "public-apis/public-apis",
+        "url": "https://github.com/public-apis/public-apis",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.5872,
+        "relevance": 0.8294,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "yes",
+          "no",
+          "no yes",
+          "utm_source github",
+          "github utm_medium",
+          "utm_medium referral",
+          "referral utm_campaign"
+        ],
+        "gem_score": 0.5028
+      },
+      {
+        "name": "massgravel/Microsoft-Activation-Scripts",
+        "url": "https://github.com/massgravel/Microsoft-Activation-Scripts",
+        "license": "GPL-3.0",
+        "role": "module (Batchfile)",
+        "novelty_score": 0.5568,
+        "relevance": 0.7762,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "align center",
+          "windows",
+          "align",
+          "center",
+          "---",
+          "###"
+        ],
+        "gem_score": 0.4825
+      },
+      {
+        "name": "ossu/computer-science",
+        "url": "https://github.com/ossu/computer-science",
+        "license": "MIT",
+        "role": "module (HTML)",
+        "novelty_score": 0.4589,
+        "relevance": 0.7641,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "cs",
+          "https",
+          "- core",
+          "curriculum",
+          "core",
+          "computer science",
+          "- advanced"
+        ],
+        "gem_score": 0.4464
+      }
+    ],
+    "architecture_ascii": "[1] ollama/ollama  →  [2] modelcontextprotocol/servers  →  [3] microsoft/playwright  →  [4] louislam/uptime-kuma  →  [5] freeCodeCamp/freeCodeCamp  →  [6] hoppscotch/hoppscotch  →  [7] yt-dlp/yt-dlp  →  [8] facebook/react  →  [9] Snailclimb/JavaGuide  →  [10] GyulyVGC/sniffnet  →  [11] YaLTeR/niri  →  [12] fatedier/frp  →  [13] DioxusLabs/dioxus  →  [14] deepseek-ai/DeepSeek-V3  →  [15] trekhleb/javascript-algorithms  →  [16] avelino/awesome-go  →  [17] public-apis/public-apis  →  [18] massgravel/Microsoft-Activation-Scripts  →  [19] ossu/computer-science\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "satellite",
+        "geolocation",
+        "dns",
+        "data",
+        "communication"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 36,
+      "probed": 20,
+      "selected": 19,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

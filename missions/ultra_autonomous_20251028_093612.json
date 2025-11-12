@@ -1,0 +1,674 @@
+{
+  "timestamp": "2025-10-28T09:36:12.712493",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a local-first, cross‑platform PC defense stack that: (1) detects and contains phishing‑borne compromises; (2) safely detonates suspicious artifacts in an ephemeral container sandbox; (3) performs evidence‑grade, OSINT‑backed attribution of phishing sources; and (4) presents a human‑centered incident cockpit. The core includes a light TensorFlow anomaly model (TF/TFLite) for per‑process behavioral scoring, a Docker/Moby sandbox for attachment/link detonation, an MCP‑based tool plane for modular sensors, a Flutter desktop/mobile console for operations, Mermaid attack graphs for clarity, and optional decoy canaries inspired by CamPishingBot patterns. Success = <2% FP on baseline processes, <60s sandbox verdicts, automated header→attribution pipelines with >80% accurate origin inference, and one‑click incident packages. This matters because it upgrades a single PC into a principled, evidence‑collecting, self‑defending node—without depending on cloud black boxes.",
+  "repository_synergy": "THE INSIGHT: Treat endpoint defense like a composable tooling fabric. Model Context Protocol (MCP) gives us a standard to expose sensors and actuators as tools; Moby makes every high‑risk step reproducible and reversible (containers, snapshots, discardable state); Flutter turns the result into an operator‑friendly cockpit; TensorFlow provides just‑enough intelligence for anomaly scoring; Mermaid converts raw telemetry into living attack graphs; OSINT via Public‑APIs turns raw indicators into attribution; PayloadsAllTheThings seeds signatures and test artifacts; and CamPishingBot teaches us the attacker’s funnel so we can build safe decoys and better detectors. Screenshot‑to‑Code is the wild card: when a phish supplies only images (or the landing page changes constantly), we can reconstruct a local, sandboxed facsimile to probe safely—without granting the adversary any live callbacks.\n\nTHE STORY: Why these repos, not the obvious EDR stack + random UI? MCP/servers lets us treat every capability (process scanner, email parser, docker detonator, OSINT lookup) as a first‑class tool with a typed schema. That means rapid composition and audits: you can literally inspect and test each tool in isolation. Moby gives a hermetic lab: suspicious docs and links never touch the host; even the network egress can be routed via a proxy/gateway for recording or blocked entirely, and we can nuke containers between runs. Flutter provides a single codebase for desktop and mobile—so you can receive a high‑fidelity alert on your phone, pause a process on your laptop, and watch an animated incident timeline later. Mermaid creates the shared language between machines and humans—attack paths, email header flows, and sandbox IO graphs render consistently. TensorFlow lets us add a compact behavioral model (autoencoder on per‑process features like child‑proc fan‑out, network burstiness, and command‑line entropy) that elevates unusual execution chains without turning the project into a heavyweight AI system.\n\nTHE SYNERGY: Public‑APIs becomes a living index for ready‑to‑wire OSINT endpoints (URL/Domain/IP reputation, passive DNS, WHOIS). We codify them behind MCP tools, so swapping providers is trivial. PayloadsAllTheThings converts from an offensive treasure chest into defensive detection packs and self‑tests: from macro lure motifs to URL obfuscation tricks, we distill rules and YARA‑like patterns that our sensors flag. CamPishingBot’s flow teaches reconnaissance of camera‑based lures; we invert it into detector rules (webcam permission prompts in webviews, fake verification pages, timing of redirect chains) and optional decoy pages that log metadata only (time, user‑agent, IP ASN)—no counter‑attack, just canary‑grade signal.\n\nTHE INNOVATION: By making every capability a containerizable tool with an MCP face, we unlock a build‑your‑own‑EDR for individuals and small teams. The combination isn’t obvious: MCP is usually for LLM tool orchestration; here it’s our uniform control plane. Flutter is usually app UI; here it’s a professional SOC console in your pocket. Mermaid is usually documentation; here it animates real‑time kill‑chains. Screenshot‑to‑Code is usually design prototyping; here it becomes a safe reproduction mechanism for volatile phishing sites. And TensorFlow is kept intentionally light—no model zoo bloat—just enough to learn your machine’s habits.\n\nTHE BRIDGE: We implement a local MCP Orchestrator that speaks to MCP Servers: security‑sensor (process + network telemetry), email‑intake (RFC822 parsing + header heuristics), docker‑detonator (Moby), osint‑hub (Public‑APIs), rule‑engine (PayloadsAllTheThings‑derived signatures), ml‑scorer (TensorFlow), and viz‑bridge (Mermaid graph serialization). Flutter talks only to the Orchestrator over a local WebSocket, receiving events and Graph DSL, then rendering: lists, triage modals, Mermaid diagrams embedded via WebView. The result: a trustworthy, modular, and explainable defense stack.",
+  "technical_architecture": "Components and Data Flows:\n1) MCP Orchestrator (TypeScript, based on modelcontextprotocol/servers patterns)\n- Purpose: A local controller exposing a single WebSocket and REST interface to Flutter. It registers and routes calls to MCP tool servers. It enforces timeouts, rate limiting, and writes append‑only incident journals.\n- Tools (MCP servers):\n  a) security-sensor: process snapshot, child/parent relations, command‑line entropy, DNS queries (via OS APIs), socket events. Output: NDJSON events.\n  b) email-intake: accepts .eml files or IMAP pulls, parses headers (SPF, DKIM results if present), extracts URLs/attachments, deobfuscates common patterns.\n  c) docker-detonator: wraps Moby to spin ephemeral containers (e.g., headless browser or unoconv + ClamAV images). It copies artifacts in, runs scripted analyses, captures pcap/stdout/stderr, and blocks egress by default (user‑toggle).\n  d) osint-hub: providers catalog sourced from public-apis/public-apis (URL reputation, WHOIS, IP geolocation). Standardized schema: {indicator, provider, score, evidence_link}.\n  e) rule-engine: compiles detection packs distilled from swisskyrepo/PayloadsAllTheThings (regexes for URL hiding, macro markers, suspicious HTML forms). Also houses simple YARA‑like signatures for strings in attachments.\n  f) ml-scorer: TensorFlow (Python service or TFLite FFI) that ingests rolling features per process: child‑proc count delta, cross‑signed binary ratio, command‑line entropy, DNS burstiness, byte‑rate variance, signing reputation (optional). Model: small autoencoder or one‑class NN. Exposes /score with 3–8ms typical latency on CPU.\n  g) viz-bridge: converts events to Mermaid state/sequence/flow diagrams: email header path → MTA hops; process tree → kill chain; sandbox network graph → outbound beacons.\n  h) decoy-crafter (optional): hosts innocuous canary pages (no malware) using patterns inspired by CamPishingBot funnels; logs only passive metadata when clicked (legally safe, no exploitation).\n\n2) UI Plane (Flutter desktop/mobile)\n- Communicates with Orchestrator via secure WebSocket (localhost or LAN). Uses platform channels/FFI only if TFLite is local. Embeds a WebView for Mermaid rendering and triage forms. Features: live alerts, evidence browser (pcaps, logs, headers), one‑click sandbox, and guided remediation.\n\n3) Storage\n- Local SQLite/Lightning FS for event indices; immutable incident bundles (zip: logs, pcaps, Mermaid graph, OSINT results, model scores). Optional S3‑compatible sync if user configures (off by default).\n\nAPI/Interfaces:\n- ws://localhost:8877/stream: push NDJSON events {type, timestamp, severity, refs}.\n- POST /mcp/run {tool, args}: invoke MCP tools: e.g., docker-detonator.run({image, cmd, artifact-id}).\n- POST /ml/score {feature_vector}: returns {score, z, flags}.\n- POST /osint/lookup {indicator, providers[]}: merges results with provider weights.\n- GET /viz/mermaid/:id: returns Mermaid DSL for render.\n\nKey Challenges and Solutions:\n- Trust boundaries: The sandbox runs in Moby with a dedicated network namespace; default no‑egress. The Orchestrator injects a recording proxy for egress‑on‑demand. Artifacts are copied via Docker volumes mounted read‑only on host.\n- Performance: Sensors stream raw events to a ring buffer; feature extraction occurs in C/Go (tiny agents) with batched calls to ml-scorer. We keep the model <200KB for CPU‑only inference under 10ms.\n- Noise and FPs: We bootstrap a per‑host baseline period (48h) feeding the autoencoder; the rule‑engine handles known bad, ML elevates unknown suspicious, and OSINT adjudicates.\n- UX clarity: Mermaid diagrams are generated server‑side so the client only renders; large graphs are chunked by phase (Initial Access → Execution → C2) to avoid WebView jank.\n- Optional reconstruction: screenshot-to-code may be used offline to scaffold a sandboxed HTML facsimile of a phish landing page for safe static analysis. It is opt‑in and never connects to attacker infrastructure.\n\nIntegration Patterns:\n- MCP as glue: each capability is a discoverable tool; adding a new OSINT provider = one YAML+handler. Swapping sandbox image = one parameter change.\n- Go micro‑agents: lightweight process/net probes (inspired by avelino/awesome-go ecosystem patterns) feed JSON to MCP. No kernel drivers required.\n- Visualization: Mermaid DSL is cached; animations for training or post‑mortems can be produced by manim from the same event timelines if desired.",
+  "expected_impact": "Use Cases:\n1) Suspicious macro‑enabled invoice: User saves the .docx. One click in Flutter triggers docker-detonator with a LibreOffice+monitor image. The sandbox observes AutoOpen macros reaching out to bit.ly → deobfuscated domain. Rule‑engine flags macro markers; OSINT confirms low reputation; Mermaid shows Email → Attachment → Sandbox → C2 attempt. Verdict in under 60s, no host risk.\n2) PowerShell abuse detection: A process burst spawns powershell.exe with long base64 arg. security-sensor flags high cmd‑entropy; ml-scorer assigns high anomaly; rule-engine matches PowerShell download‑exec patterns. Flutter prompts to suspend the parent process and isolate network for 5 minutes. User accepts, incident bundle generated.\n3) Email header attribution: A phish bypasses SPF. email-intake parses Received headers and DKIM failures; osint-hub correlates sending IP to a known bulletproof hoster ASN. The tool suggests reporting with prefilled abuse contacts; Mermaid renders the mail hop chain for audit.\n4) Link‑only phish with rotating content: Instead of visiting the live URL, decoy-crafter hosts a local facsimile page (optionally scaffolded via screenshot-to-code). Embedded JavaScript analysis in a sandbox reveals obfuscated form posts and exfil endpoints without contacting the adversary.\n5) USB lure analysis: A found USB holds a suspicious PDF. detonation container runs PDF parser + network monitor. PayloadsAllTheThings signatures catch embedded launch actions; no egress allowed; a clean PDF is generated for viewing.\n6) Executive mobile alerts: Flutter mobile app receives push when an anomaly crosses threshold while the laptop lid is closed; they can quarantine network and schedule a sandbox run remotely over LAN.\n7) Training mode: Using PayloadsAllTheThings samples in a lab, manim produces an animated timeline of a simulated phish and the system’s defenses for internal training.\n\nScalability and Extensibility:\n- Add tools by MCP contract; run multiple detonators in parallel containers; OSINT providers pluggable; ML retrain pipelines are local and incremental.\n\nLimitations and Mitigations:\n- No hack‑back: Attribution stays within legal OSINT and passive canaries; we never exploit or strike external systems.\n- Encrypted payloads may evade static rules: Sandbox + behavior model reduces risk.\n- Kernel‑level stealth malware may hide: This design is user‑space; for high‑assurance, consider optional eBPF probes later.\n- Public API rate limits: Cache results locally and prioritize providers.",
+  "innovation_analysis": "Innovation score: 8.5/10. Uncommon synthesis: MCP as a local security tool plane, Docker as a zero‑trust detonator, Flutter as a SOC‑grade console, Mermaid for live attack graphs, and a minimal TF behavioral model—plus the clever repurposing of PayloadsAllTheThings and CamPishingBot for detection/decoy. Immediate next steps: (1) Scaffold MCP Orchestrator with security-sensor and docker-detonator; (2) Implement TF autoencoder training on 48h baseline; (3) Build Flutter console with Mermaid WebView and incident bundles; (4) Add 3 OSINT providers via public-apis; (5) Port 20 high‑value rules from PayloadsAllTheThings. Metrics: FP rate on benign processes, median sandbox verdict time, OSINT attribution accuracy, user triage time, incident bundle completeness. Tools/frameworks: modelcontextprotocol/servers, moby/moby, tensorflow/tensorflow (or TFLite), flutter/flutter, mermaid-js/mermaid, swisskyrepo/PayloadsAllTheThings, public-apis/public-apis, (optional) 3b1b/manim and abi/screenshot-to-code for reports/decoys.",
+  "sources": [
+    {
+      "name": "modelcontextprotocol/servers",
+      "url": "https://github.com/modelcontextprotocol/servers",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Model Context Protocol servers\n\nThis repository is a collection of *reference implementations* for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), as well as references to community-built servers and additional resources.\n\nThe servers in this repository showcase the versatility and extensibility of MCP, demonstrating how it can be used to give Large Language Models (LLMs) secure, controlled access to tools and data sources.\nTypically, each MCP server is implemented with an MCP SDK:\n\n- [C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk)\n- [Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk)\n- [Java MCP SDK](https://github.com/modelcontextprotocol/java-sdk)\n- [Kotlin MCP SDK](https://github.com/modelcontextprotocol/kotlin-sdk)\n- [PHP MCP SDK](https://github.com/modelcontextprotocol/php-sdk)\n- [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk)\n- [Ruby MCP SDK](https://github.com/modelcontextprotocol/ruby-sdk)\n- [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)\n- [Swift MCP SDK](https://github.com/modelcontextprotocol/swift-sdk)\n- [TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)\n\n> [!NOTE]\n> Lists in this README are maintained in alphabetical order to minimize merge conflicts when adding new items.\n\n## 🌟 Reference Servers\n\nThese servers aim to demonstrate MCP features and the official SDKs.\n\n- **[Everything](src/everything)** - Reference / test server with prompts, resources, and tools.\n- **[Fetch](src/fetch)** - Web content fetching and conversion for efficient LLM usage.\n- **[Filesystem](src/filesystem)** - Secure file operations with configurable access controls.\n- **[Git](src/git)** - Tools to read, search, and manipulate Git repositories.\n- **[Memory](src/memory)** - Knowledge graph-based persistent memory system.\n- **[Sequential Thinking](src/sequentialthinking)** - Dynamic and reflective problem-solving through thought sequences.\n- **[Time](src/time)** - Time",
+      "scores": {
+        "novelty": 0.8397,
+        "health": 0.75,
+        "relevance": 0.7814,
+        "author_rep": 0.0,
+        "gem_score": 0.8267
+      },
+      "concepts": [
+        "-",
+        "https",
+        "mcp",
+        "mcp sdk",
+        "- img",
+        "img height",
+        "height width",
+        "width src"
+      ]
+    },
+    {
+      "name": "flutter/flutter",
+      "url": "https://github.com/flutter/flutter",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "<a href=\"https://flutter.dev/\">\n  <h1 align=\"center\">\n    <picture>\n      <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://storage.googleapis.com/cms-storage-bucket/6e19fee6b47b36ca613f.png\">\n      <img alt=\"Flutter\" src=\"https://storage.googleapis.com/cms-storage-bucket/c823e53b3a1a7b0d36a9.png\">\n    </picture>\n  </h1>\n</a>\n\n[![Flutter CI Status](https://flutter-dashboard.appspot.com/api/public/build-status-badge?repo=flutter)](https://flutter-dashboard.appspot.com/#/build?repo=flutter)\n[![Discord badge][]][Discord instructions]\n[![Twitter handle][]][Twitter badge]\n[![BlueSky badge][]][BlueSky handle]\n[![codecov](https://codecov.io/gh/flutter/flutter/branch/master/graph/badge.svg?token=11yDrJU2M2)](https://codecov.io/gh/flutter/flutter)\n[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/5631/badge)](https://bestpractices.coreinfrastructure.org/projects/5631)\n[![SLSA 1](https://slsa.dev/images/gh-badge-level1.svg)](https://slsa.dev)\n\nFlutter is Google's SDK for crafting beautiful, fast user experiences for\nmobile, web, and desktop from a single codebase. Flutter works with existing\ncode, is used by developers and organizations around the world, and is free and\nopen source.\n\n## Documentation\n\n* [Install Flutter](https://flutter.dev/get-started/)\n* [Flutter documentation](https://docs.flutter.dev/)\n* [Development wiki](./docs/README.md)\n* [Contributing to Flutter](https://github.com/flutter/flutter/blob/main/CONTRIBUTING.md)\n\nFor announcements about new releases, follow the\n[flutter-announce@googlegroups.com](https://groups.google.com/forum/#!forum/flutter-announce)\nmailing list. Our documentation also tracks [breaking\nchanges](https://docs.flutter.dev/release/breaking-changes) across releases.\n\n## Terms of service\n\nThe Flutter tool may occasionally download resources from Google servers. By\ndownloading or using the Flutter SDK, you agree to the Google Terms of Service:\nhttps://policies.google.com/terms\n\nFor example, when installe",
+      "scores": {
+        "novelty": 0.8287,
+        "health": 0.75,
+        "relevance": 0.7918,
+        "author_rep": 0.0,
+        "gem_score": 0.7099
+      },
+      "concepts": [
+        "https",
+        "flutter",
+        "hot reload",
+        "ffi",
+        "android",
+        "code",
+        "ffi https",
+        "badge"
+      ]
+    },
+    {
+      "name": "mermaid-js/mermaid",
+      "url": "https://github.com/mermaid-js/mermaid",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n<img src=\"https://raw.githubusercontent.com/mermaid-js/mermaid/develop/docs/public/favicon.svg\" height=\"150\">\n</p>\n<h1 align=\"center\">\nMermaid\n</h1>\n<p align=\"center\">\nGenerate diagrams from markdown-like text.\n<p>\n<p align=\"center\">\n  <a href=\"https://www.npmjs.com/package/mermaid\"><img src=\"https://img.shields.io/npm/v/mermaid?color=ff3670&label=\"></a>\n<p>\n\n<p align=\"center\">\n<a href=\"https://mermaid.live/\"><b>Live Editor!</b></a>\n</p>\n<p align=\"center\">\n <a href=\"https://mermaid.js.org\">📖 Documentation</a> | <a href=\"https://mermaid.js.org/intro/\">🚀 Getting Started</a> | <a href=\"https://www.jsdelivr.com/package/npm/mermaid\">🌐 CDN</a> | <a href=\"https://discord.gg/sKeNQX4Wtj\" title=\"Discord invite\">🙌 Join Us</a>\n</p>\n<p align=\"center\">\n<a href=\"./README.zh-CN.md\">简体中文</a>\n</p>\n<p align=\"center\">\nTry Live Editor previews of future releases: <a href=\"https://develop.git.mermaid.live/\" title=\"Try the mermaid version from the develop branch.\">Develop</a> | <a href=\"https://next.git.mermaid.live/\" title=\"Try the mermaid version from the next branch.\">Next</a>\n</p>\n\n<br>\n<br>\n\n[![NPM](https://img.shields.io/npm/v/mermaid)](https://www.npmjs.com/package/mermaid)\n[![Build CI Status](https://github.com/mermaid-js/mermaid/actions/workflows/build.yml/badge.svg)](https://github.com/mermaid-js/mermaid/actions/workflows/build.yml)\n[![npm minified gzipped bundle size](https://img.shields.io/bundlephobia/minzip/mermaid)](https://bundlephobia.com/package/mermaid)\n[![Coverage Status](https://codecov.io/github/mermaid-js/mermaid/branch/develop/graph/badge.svg)](https://app.codecov.io/github/mermaid-js/mermaid/tree/develop)\n[![CDN Status](https://img.shields.io/jsdelivr/npm/hm/mermaid)](https://www.jsdelivr.com/package/npm/mermaid)\n[![NPM Downloads](https://img.shields.io/npm/dm/mermaid)](https://www.npmjs.com/package/mermaid)\n[![Join our Discord!](https://img.shields.io/static/v1?message=join%20chat&color=9cf&logo=discord&label=discord)](https://discord.gg/sKeNQX",
+      "scores": {
+        "novelty": 0.5708,
+        "health": 1.0,
+        "relevance": 0.7718,
+        "author_rep": 0.0,
+        "gem_score": 0.6738
+      },
+      "concepts": [
+        "https",
+        "mermaid",
+        "href https",
+        "align center",
+        "href",
+        "p align",
+        "/a",
+        "p"
+      ]
+    },
+    {
+      "name": "tensorflow/tensorflow",
+      "url": "https://github.com/tensorflow/tensorflow",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"center\">\n  <img src=\"https://www.tensorflow.org/images/tf_logo_horizontal.png\">\n</div>\n\n[![Python](https://img.shields.io/pypi/pyversions/tensorflow.svg)](https://badge.fury.io/py/tensorflow)\n[![PyPI](https://badge.fury.io/py/tensorflow.svg)](https://badge.fury.io/py/tensorflow)\n[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4724125.svg)](https://doi.org/10.5281/zenodo.4724125)\n[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/1486/badge)](https://bestpractices.coreinfrastructure.org/projects/1486)\n[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tensorflow/tensorflow/badge)](https://securityscorecards.dev/viewer/?uri=github.com/tensorflow/tensorflow)\n[![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/tensorflow.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:tensorflow)\n[![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/tensorflow-py.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:tensorflow-py)\n[![OSSRank](https://shields.io/endpoint?url=https://ossrank.com/shield/44)](https://ossrank.com/p/44)\n[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v1.4%20adopted-ff69b4.svg)](CODE_OF_CONDUCT.md)\n\n**`Documentation`** |\n------------------- |\n[![Documentation](https://img.shields.io/badge/api-reference-blue.svg)](https://www.tensorflow.org/api_docs/) |\n\n[TensorFlow](https://www.tensorflow.org/) is an end-to-end open source platform\nfor machine learning. It has a comprehensive, flexible ecosystem of\n[tools](https://www.tensorflow.org/resources/tools),\n[libraries](https://www.tensorflow.org/resources/libraries-extensions), and\n[community](https://www.tensorflow.org/community) resources that lets\nresearchers push the state-of-the-art in ML and developers easily build and\ndeploy ML-powered applications.\n\nTensorFlow was originally developed by researchers and engi",
+      "scores": {
+        "novelty": 0.8788,
+        "health": 0.5,
+        "relevance": 0.8348,
+        "author_rep": 0.0,
+        "gem_score": 0.672
+      },
+      "concepts": [
+        "https",
+        "tensorflow",
+        "status https",
+        "status",
+        ".",
+        "pypi https",
+        "pypi",
+        "build"
+      ]
+    },
+    {
+      "name": "moby/moby",
+      "url": "https://github.com/moby/moby",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "The Moby Project\n================\n\n[![PkgGoDev](https://pkg.go.dev/badge/github.com/moby/moby/v2)](https://pkg.go.dev/github.com/moby/moby/v2)\n![GitHub License](https://img.shields.io/github/license/moby/moby)\n[![Go Report Card](https://goreportcard.com/badge/github.com/moby/moby/v2)](https://goreportcard.com/report/github.com/moby/moby/v2)\n[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/moby/moby/badge)](https://scorecard.dev/viewer/?uri=github.com/moby/moby)\n[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10989/badge)](https://www.bestpractices.dev/projects/10989)\n\n\n![Moby Project logo](docs/static_files/moby-project-logo.png \"The Moby Project\")\n\nMoby is an open-source project created by Docker to enable and accelerate software containerization.\n\nIt provides a \"Lego set\" of toolkit components, the framework for assembling them into custom container-based systems, and a place for all container enthusiasts and professionals to experiment and exchange ideas.\nComponents include container build tools, a container registry, orchestration tools, a runtime and more, and these can be used as building blocks in conjunction with other tools and projects.\n\n## Principles\n\nMoby is an open project guided by strong principles, aiming to be modular, flexible and without too strong an opinion on user experience.\nIt is open to the community to help set its direction.\n\n- Modular: the project includes lots of components that have well-defined functions and APIs that work together.\n- Batteries included but swappable: Moby includes enough components to build fully featured container systems, but its modular architecture ensures that most of the components can be swapped by different implementations.\n- Usable security: Moby provides secure defaults without compromising usability.\n- Developer focused: The APIs are intended to be functional and useful to build powerful tools.\nThey are not necessarily intended as end user tools but as components aimed a",
+      "scores": {
+        "novelty": 0.4778,
+        "health": 0.75,
+        "relevance": 0.8143,
+        "author_rep": 0.0,
+        "gem_score": 0.5867
+      },
+      "concepts": [
+        "moby",
+        "https",
+        "moby project",
+        "project",
+        "components",
+        "docker",
+        "container",
+        "tools"
+      ]
+    },
+    {
+      "name": "avelino/awesome-go",
+      "url": "https://github.com/avelino/awesome-go",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Awesome Go\n\n<a href=\"https://awesome-go.com/\"><img align=\"right\" src=\"https://github.com/avelino/awesome-go/raw/main/tmpl/assets/logo.png\" alt=\"awesome-go\" title=\"awesome-go\" /></a>\n\n[![Build Status](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml/badge.svg?branch=main)](https://github.com/avelino/awesome-go/actions/workflows/tests.yaml?query=branch%3Amain)\n[![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome)\n[![Slack Widget](https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=red)](https://gophers.slack.com/messages/awesome)\n[![Netlify Status](https://api.netlify.com/api/v1/badges/83a6dcbe-0da6-433e-b586-f68109286bd5/deploy-status)](https://app.netlify.com/sites/awesome-go/deploys)\n[![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/avelino/awesome-go/)\n[![Last Commit](https://img.shields.io/github/last-commit/avelino/awesome-go)](https://github.com/avelino/awesome-go/commits/main)\n\nWe use the _[Golang Bridge](https://github.com/gobridge/about-us/blob/master/README.md)_ community Slack for instant communication, follow the [form here to join](https://invite.slack.golangbridge.org/).\n\n<a href=\"https://www.producthunt.com/posts/awesome-go?utm_source=badge-featured&utm_medium=badge&utm_souce=badge-awesome-go\" target=\"_blank\"><img src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=291535&theme=light\" alt=\"awesome-go - Curated list awesome Go frameworks, libraries and software | Product Hunt\" style=\"width: 250px; height: 54px;\" width=\"250\" height=\"54\" /></a>\n\n**Sponsorships:**\n\n_Special thanks to_\n\n<div align=\"center\">\n<table cellpadding=\"5\">\n<tbody align=\"center\">\n<tr>\n<td colspan=\"2\">\n<a href=\"https://bit.ly/awesome-go-workos\">\n<img src=\"https://avelino.run/sponsors/workos-logo-white-bg.svg\" width=\"200\" alt=\"WorkOS\"><br/>\n<b>Your app",
+      "scores": {
+        "novelty": 0.4593,
+        "health": 0.5,
+        "relevance": 0.8186,
+        "author_rep": 0.0,
+        "gem_score": 0.515
+      },
+      "concepts": [
+        "-",
+        "https",
+        "awesome go",
+        "awesome",
+        "go",
+        "href https",
+        "src https",
+        "- database"
+      ]
+    },
+    {
+      "name": "abi/screenshot-to-code",
+      "url": "https://github.com/abi/screenshot-to-code",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# screenshot-to-code\n\nA simple tool to convert screenshots, mockups and Figma designs into clean, functional code using AI. Now supporting Claude Sonnet 3.7!\n\nhttps://github.com/abi/screenshot-to-code/assets/23818/6cebadae-2fe3-4986-ac6a-8fb9db030045\n\nSupported stacks:\n\n- HTML + Tailwind\n- HTML + CSS\n- React + Tailwind\n- Vue + Tailwind\n- Bootstrap\n- Ionic + Tailwind\n- SVG\n\nSupported AI models:\n\n- Claude Sonnet 3.7 - Best model!\n- GPT-4o - also recommended!\n- DALL-E 3 or Flux Schnell (using Replicate) for image generation\n\nSee the [Examples](#-examples) section below for more demos.\n\nWe also just added experimental support for taking a video/screen recording of a website in action and turning that into a functional prototype.\n\n![google in app quick 3](https://github.com/abi/screenshot-to-code/assets/23818/8758ffa4-9483-4b9b-bb66-abd6d1594c33)\n\n[Learn more about video here](https://github.com/abi/screenshot-to-code/wiki/Screen-Recording-to-Code).\n\n[Follow me on Twitter for updates](https://twitter.com/_abi_).\n\n## 🌍 Hosted Version\n\n[Try it live on the hosted version (paid)](https://screenshottocode.com).\n\n## 🛠 Getting Started\n\nThe app has a React/Vite frontend and a FastAPI backend.\n\nKeys needed:\n\n- [OpenAI API key with access to GPT-4](https://github.com/abi/screenshot-to-code/blob/main/Troubleshooting.md) or Anthropic key (optional)\n- Both are recommended so you can compare results from both Claude and GPT4o\n\nIf you'd like to run the app with Ollama open source models (not recommended due to poor quality results), [follow this comment](https://github.com/abi/screenshot-to-code/issues/354#issuecomment-2435479853).\n\nRun the backend (I use Poetry for package management - `pip install --upgrade poetry` if you don't have it):\n\n```bash\ncd backend\necho \"OPENAI_API_KEY=sk-your-key\" > .env\necho \"ANTHROPIC_API_KEY=your-key\" > .env\npoetry install\npoetry shell\npoetry run uvicorn main:app --reload --port 7001\n```\n\nYou can also set up the keys using the settings dialog on the fron",
+      "scores": {
+        "novelty": 0.6327,
+        "health": 0.25,
+        "relevance": 0.8038,
+        "author_rep": 0.0,
+        "gem_score": 0.5122
+      },
+      "concepts": [
+        "-",
+        "https",
+        "can",
+        "run",
+        ".",
+        "if",
+        "+ tailwind",
+        "tailwind -"
+      ]
+    },
+    {
+      "name": "public-apis/public-apis",
+      "url": "https://github.com/public-apis/public-apis",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Try Public APIs for free\nThe Public APIs repository is manually curated by community members like you and folks working at [APILayer](https://apilayer.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo). It includes an extensive list of public APIs from many domains that you can use for your own products. Consider it a treasure trove of APIs well-managed by the community over the years.\n\n<br >\n\n<p>\n    <a href=\"https://apilayer.com\">\n        <div>\n            <img src=\".github/cs1586-APILayerLogoUpdate2022-LJ_v2-HighRes.png\" width=\"100%\" alt=\"APILayer Logo\" />\n        </div>\n    </a>\n  </p>\n\nAPILayer is the fastest way to integrate APIs into any product. Explore [APILayer APIs](https://apilayer.com/products/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) here for your next project.\n\nJoin our [Discord server](https://discord.com/invite/hgjA78638n/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo) to get updates, ask questions, get answers, random community calls, and more.\n\n<br >\n\n## APILayer APIs\n| API | Description | Call this API |\n|:---|:---|:---|\n| [IPstack](https://ipstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Locate and Identify Website Visitors by IP Address | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; height: 32px;\">](https://god.gw.postman.com/run-collection/10131015-55145132-244c-448c-8e6f-8780866e4862?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D10131015-55145132-244c-448c-8e6f-8780866e4862%26entityType%3Dcollection%26workspaceId%3D2b7498b6-6d91-4fa8-817f-608441fe42a8)|\n| [Marketstack](https://marketstack.com/?utm_source=Github&utm_medium=Referral&utm_campaign=Public-apis-repo-Best-sellers) | Free, easy-to-use REST API interface delivering worldwide stock market data in JSON format | [<img src=\"https://run.pstmn.io/button.svg\" alt=\"Run In Postman\" style=\"width: 128px; heigh",
+      "scores": {
+        "novelty": 0.5872,
+        "health": 0.25,
+        "relevance": 0.8075,
+        "author_rep": 0.0,
+        "gem_score": 0.4979
+      },
+      "concepts": [
+        "https",
+        "yes",
+        "no",
+        "no yes",
+        "utm_source github",
+        "github utm_medium",
+        "utm_medium referral",
+        "referral utm_campaign"
+      ]
+    },
+    {
+      "name": "swisskyrepo/PayloadsAllTheThings",
+      "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Payloads All The Things\n\nA list of useful payloads and bypasses for Web Application Security.\nFeel free to improve with your payloads and techniques!\n\nYou can also contribute with a :beers: IRL, or using the sponsor button.\n\n[![Sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&link=https://github.com/sponsors/swisskyrepo)](https://github.com/sponsors/swisskyrepo)\n[![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Payloads%20All%20The%20Things,%20a%20list%20of%20useful%20payloads%20and%20bypasses%20for%20Web%20Application%20Security%20-%20by%20@pentest_swissky&url=https://github.com/swisskyrepo/PayloadsAllTheThings/)\n\nAn alternative display version is available at [PayloadsAllTheThingsWeb](https://swisskyrepo.github.io/PayloadsAllTheThings/).\n\n<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/swisskyrepo/PayloadsAllTheThings/master/.github/banner.png\" alt=\"banner\">\n</p>\n\n## :book: Documentation\n\nEvery section contains the following files, you can use the `_template_vuln` folder to create a new chapter:\n\n- README.md - vulnerability description and how to exploit it, including several payloads\n- Intruder - a set of files to give to Burp Intruder\n- Images - pictures for the README.md\n- Files - some files referenced in the README.md\n\nYou might also like the other projects from the AllTheThings family :\n\n- [InternalAllTheThings](https://swisskyrepo.github.io/InternalAllTheThings/) - Active Directory and Internal Pentest Cheatsheets\n- [HardwareAllTheThings](https://swisskyrepo.github.io/HardwareAllTheThings/) - Hardware/IOT Pentesting Wiki\n\nYou want more? Check the [Books](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/_LEARNING_AND_SOCIALS/BOOKS.md) and [YouTube channel](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/_LEARNING_AND_SOCIALS/YOUTUBE.md) selections.\n\n## :technologist: Contributions\n\nBe sure to read [CONTRIBU",
+      "scores": {
+        "novelty": 0.2907,
+        "health": 0.5,
+        "relevance": 0.8536,
+        "author_rep": 0.0,
+        "gem_score": 0.4677
+      },
+      "concepts": [
+        "https",
+        "-",
+        "img src",
+        "src https",
+        "payloads",
+        "img",
+        "src",
+        "alt"
+      ]
+    },
+    {
+      "name": "3b1b/manim",
+      "url": "https://github.com/3b1b/manim",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n    <a href=\"https://github.com/3b1b/manim\">\n        <img src=\"https://raw.githubusercontent.com/3b1b/manim/master/logo/cropped.png\">\n    </a>\n</p>\n\n[![pypi version](https://img.shields.io/pypi/v/manimgl?logo=pypi)](https://pypi.org/project/manimgl/)\n[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](http://choosealicense.com/licenses/mit/)\n[![Manim Subreddit](https://img.shields.io/reddit/subreddit-subscribers/manim.svg?color=ff4301&label=reddit&logo=reddit)](https://www.reddit.com/r/manim/)\n[![Manim Discord](https://img.shields.io/discord/581738731934056449.svg?label=discord&logo=discord)](https://discord.com/invite/bYCyhM9Kz2)\n[![docs](https://github.com/3b1b/manim/workflows/docs/badge.svg)](https://3b1b.github.io/manim/)\n\nManim is an engine for precise programmatic animations, designed for creating explanatory math videos.\n\nNote, there are two versions of manim.  This repository began as a personal project by the author of [3Blue1Brown](https://www.3blue1brown.com/) for the purpose of animating those videos, with video-specific code available [here](https://github.com/3b1b/videos).  In 2020 a group of developers forked it into what is now the [community edition](https://github.com/ManimCommunity/manim/), with a goal of being more stable, better tested, quicker to respond to community contributions, and all around friendlier to get started with. See [this page](https://docs.manim.community/en/stable/faq/installation.html#different-versions) for more details.\n\n## Installation\n> [!Warning]\n> **WARNING:** These instructions are for ManimGL _only_. Trying to use these instructions to install [Manim Community/manim](https://github.com/ManimCommunity/manim) or instructions there to install this version will cause problems. You should first decide which version you wish to install, then only follow the instructions for your desired version.\n\n> [!Note]\n> **Note**: To install manim directly through pip, please pay attention t",
+      "scores": {
+        "novelty": 0.315,
+        "health": 0.5,
+        "relevance": 0.7933,
+        "author_rep": 0.0,
+        "gem_score": 0.4633
+      },
+      "concepts": [
+        "https",
+        "install",
+        "manim",
+        ".",
+        "manimgl",
+        "pip install",
+        "install manimgl",
+        "example_scenes.py openingmanimexample"
+      ]
+    },
+    {
+      "name": "vuejs/awesome-vue",
+      "url": "https://github.com/vuejs/awesome-vue",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <br>\n  <img width=\"400\" src=\"./assets/logo.svg\" alt=\"logo of vue-awesome repository\">\n  <br>\n  <br>\n</p>\n\n## Awesome Vue.js [![Awesome](https://cdn.rawgit.com/sindresorhus/awesome/d7305f38d29fed78fa85652e3a63e154dd8e8829/media/badge.svg)](https://github.com/sindresorhus/awesome) [![Track Awesome List](https://www.trackawesomelist.com/badge.svg)](https://www.trackawesomelist.com/vuejs/awesome-vue)\n\n> A curated list of awesome things related to Vue.js\n\n- [Awesome Vue.js  ](#awesome-vuejs--)\n- [Resources](#resources)\n  - [Official Resources](#official-resources)\n  - [External Resources](#external-resources)\n  - [Job Portal](#job-portal)\n  - [Community](#community)\n  - [Conferences](#conferences)\n  - [Podcasts](#podcasts)\n  - [Official Examples](#official-examples)\n  - [Tutorials](#tutorials)\n  - [Examples](#examples)\n  - [Books](#books)\n  - [Blog Posts](#blog-posts)\n  - [Courses](#courses)\n  - [Documentaries](#documentaries)\n- [Companies Using Vue.js](#companies-using-vuejs)\n- [Projects Using Vue.js](#projects-using-vuejs)\n  - [Open Source](#open-source)\n  - [Commercial Products](#commercial-products)\n  - [Apps/Websites](#appswebsites)\n  - [Interactive Experiences](#interactive-experiences)\n  - [Enterprise Usage](#enterprise-usage)\n  - [A11y](#a11y)\n- [Components \\& Libraries](#components--libraries)\n  - [Frameworks](#frameworks)\n    - [Responsive](#responsive)\n    - [Mobile](#mobile)\n    - [Component Collections](#component-collections)\n    - [Admin Template](#admin-template)\n    - [Server-side rendering](#server-side-rendering)\n    - [Static website generator](#static-website-generator)\n    - [Other](#other)\n  - [UI Layout](#ui-layout)\n  - [UI Components](#ui-components)\n    - [Table](#table)\n    - [Notification](#notification)\n    - [Loader](#loader)\n      - [Progress Bar](#progress-bar)\n    - [Tooltip](#tooltip)\n    - [Overlay](#overlay)\n    - [Icons](#icons)\n    - [Marquee](#marquee)\n    - [Menu](#menu)\n    - [Carousel](#carousel)\n    - [Chart",
+      "scores": {
+        "novelty": 0.3089,
+        "health": 0.25,
+        "relevance": 0.7922,
+        "author_rep": 0.0,
+        "gem_score": 0.3957
+      },
+      "concepts": [
+        "-",
+        "https",
+        "vue.js",
+        "- vue.js",
+        "vue",
+        "- vue",
+        "resources",
+        "- official"
+      ]
+    },
+    {
+      "name": "mithun50/CamPishingBot",
+      "url": "https://github.com/mithun50/CamPishingBot",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "## CamPishingBot\nCamPishingBot is a Telegram bot designed to simulate phishing scenarios and provide security awareness training. This bot supports URL shortening, user interaction tracking, and various administrative controls.\n\n## Features\n- **Phishing Simulation**: Simulate phishing attempts to educate users about security threats.\n- **Interaction Tracking**: Monitor and log interactions with the bot.\n\n## Installation\n\nTo set up CamPishingBot locally, follow these steps:\n\n**Required Packages:**\n   ```bash\n    pkg install nodejs\n```\n\n1. **Clone the Repository:**\n   ```bash\n   git clone https://github.com/mithun50/CamPishingBot.git\n   ```\n\n2. **Navigate to the Project Directory:**\n   ```bash\n   cd CamPishingBot\n   ```\n\n3. **Install Dependencies:**\n   Ensure you have Node.js installed. Install the required packages using npm:\n   ```bash\n   npm install\n   ```\n\n4. **Set Up Environment Variables:**\n   Create a `.env` file in the project root and add your Telegram bot token and other configurations:\n   ```env\n   TGBToken=your-telegram-bot-token\n   HOST_URL=your-host-url\n   ADMIN_TELEGRAM_ID=your-admin-telegram-id (Optional: See Admin Functionality section)\n   TELEGRAM_BOT_LINK=your-telegram-bot-profile-link (Optional: See Root Endpoint Configuration section)\n   ```\n\n5. **Run the Bot:**\n   Start the bot with:\n   ```bash\n   node index.js\n   ```\n\n6. **Interact with the Bot:**\n   Start a conversation with your bot on Telegram using the username specified in your bot's settings.\n\n## Usage\n\n- **Start the Bot**: Use `npm start` to run the bot and interact with it on Telegram.\n- **Phishing Simulation**: Use the bot to simulate phishing scenarios and track responses.\n- **Port Forwarding**: Use the Port forwarding tools like ngrok.\n\n## Configuration\n\nAdjust settings and configurations as needed in the code or via environment variables in the `.env` file.\n\n### Root Endpoint Configuration\nThe root `/` endpoint of the web server can be configured using the `TELEGRAM_BOT_LINK` environ",
+      "scores": {
+        "novelty": 0.0034,
+        "health": 0.25,
+        "relevance": 0.8694,
+        "author_rep": 0.0,
+        "gem_score": 0.3106
+      },
+      "concepts": [
+        "-",
+        "bot",
+        "telegram",
+        "https",
+        "##",
+        "screenshot https",
+        "root",
+        ".env file"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "pishing",
+      "hack",
+      "hacking",
+      "mail"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 17,
+    "explore_longtail": false,
+    "max_stars": 10000,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "Finds an engineering solution to protect your PC, including tracking down those who sent phishing attacks and attempted to enter your PC. Include a light machine learning",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": false,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "pishing",
+      "hack",
+      "hacking",
+      "mail"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 22,
+    "probed": 20,
+    "selected": 12,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "modelcontextprotocol/servers",
+        "url": "https://github.com/modelcontextprotocol/servers",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.8397,
+        "relevance": 0.7814,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "mcp",
+          "mcp sdk",
+          "- img",
+          "img height",
+          "height width",
+          "width src"
+        ],
+        "gem_score": 0.8267
+      },
+      {
+        "name": "flutter/flutter",
+        "url": "https://github.com/flutter/flutter",
+        "license": "BSD-3-Clause",
+        "role": "module (Dart)",
+        "novelty_score": 0.8287,
+        "relevance": 0.7918,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "flutter",
+          "hot reload",
+          "ffi",
+          "android",
+          "code",
+          "ffi https",
+          "badge"
+        ],
+        "gem_score": 0.7099
+      },
+      {
+        "name": "mermaid-js/mermaid",
+        "url": "https://github.com/mermaid-js/mermaid",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.5708,
+        "relevance": 0.7718,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "mermaid",
+          "href https",
+          "align center",
+          "href",
+          "p align",
+          "/a",
+          "p"
+        ],
+        "gem_score": 0.6738
+      },
+      {
+        "name": "tensorflow/tensorflow",
+        "url": "https://github.com/tensorflow/tensorflow",
+        "license": "Apache-2.0",
+        "role": "module (C++)",
+        "novelty_score": 0.8788,
+        "relevance": 0.8348,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "tensorflow",
+          "status https",
+          "status",
+          ".",
+          "pypi https",
+          "pypi",
+          "build"
+        ],
+        "gem_score": 0.672
+      },
+      {
+        "name": "moby/moby",
+        "url": "https://github.com/moby/moby",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.4778,
+        "relevance": 0.8143,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "moby",
+          "https",
+          "moby project",
+          "project",
+          "components",
+          "docker",
+          "container",
+          "tools"
+        ],
+        "gem_score": 0.5867
+      },
+      {
+        "name": "avelino/awesome-go",
+        "url": "https://github.com/avelino/awesome-go",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.4593,
+        "relevance": 0.8186,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "awesome go",
+          "awesome",
+          "go",
+          "href https",
+          "src https",
+          "- database"
+        ],
+        "gem_score": 0.515
+      },
+      {
+        "name": "abi/screenshot-to-code",
+        "url": "https://github.com/abi/screenshot-to-code",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.6327,
+        "relevance": 0.8038,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "can",
+          "run",
+          ".",
+          "if",
+          "+ tailwind",
+          "tailwind -"
+        ],
+        "gem_score": 0.5122
+      },
+      {
+        "name": "public-apis/public-apis",
+        "url": "https://github.com/public-apis/public-apis",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.5872,
+        "relevance": 0.8075,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "yes",
+          "no",
+          "no yes",
+          "utm_source github",
+          "github utm_medium",
+          "utm_medium referral",
+          "referral utm_campaign"
+        ],
+        "gem_score": 0.4979
+      },
+      {
+        "name": "swisskyrepo/PayloadsAllTheThings",
+        "url": "https://github.com/swisskyrepo/PayloadsAllTheThings",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.2907,
+        "relevance": 0.8536,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "img src",
+          "src https",
+          "payloads",
+          "img",
+          "src",
+          "alt"
+        ],
+        "gem_score": 0.4677
+      },
+      {
+        "name": "3b1b/manim",
+        "url": "https://github.com/3b1b/manim",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.315,
+        "relevance": 0.7933,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "install",
+          "manim",
+          ".",
+          "manimgl",
+          "pip install",
+          "install manimgl",
+          "example_scenes.py openingmanimexample"
+        ],
+        "gem_score": 0.4633
+      },
+      {
+        "name": "vuejs/awesome-vue",
+        "url": "https://github.com/vuejs/awesome-vue",
+        "license": "MIT",
+        "role": "module (NA)",
+        "novelty_score": 0.3089,
+        "relevance": 0.7922,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "vue.js",
+          "- vue.js",
+          "vue",
+          "- vue",
+          "resources",
+          "- official"
+        ],
+        "gem_score": 0.3957
+      },
+      {
+        "name": "mithun50/CamPishingBot",
+        "url": "https://github.com/mithun50/CamPishingBot",
+        "license": "MIT",
+        "role": "module (EJS)",
+        "novelty_score": 0.0034,
+        "relevance": 0.8694,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "bot",
+          "telegram",
+          "https",
+          "##",
+          "screenshot https",
+          "root",
+          ".env file"
+        ],
+        "gem_score": 0.3106
+      }
+    ],
+    "architecture_ascii": "[1] modelcontextprotocol/servers  →  [2] flutter/flutter  →  [3] mermaid-js/mermaid  →  [4] tensorflow/tensorflow  →  [5] moby/moby  →  [6] avelino/awesome-go  →  [7] abi/screenshot-to-code  →  [8] public-apis/public-apis  →  [9] swisskyrepo/PayloadsAllTheThings  →  [10] 3b1b/manim  →  [11] vuejs/awesome-vue  →  [12] mithun50/CamPishingBot\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "pishing",
+        "hack",
+        "hacking",
+        "mail"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 22,
+      "probed": 20,
+      "selected": 12,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}
