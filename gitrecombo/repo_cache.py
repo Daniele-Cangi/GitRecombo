@@ -456,6 +456,12 @@ class RepoCache:
         
         return repos_deleted, readmes_deleted, health_deleted, embeddings_deleted
     
+    def get_repo_count(self) -> int:
+        """Get total number of cached repositories."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM repositories")
+        return cursor.fetchone()[0]
+    
     def get_stats(self) -> Dict:
         """Get cache statistics."""
         cursor = self.conn.cursor()
