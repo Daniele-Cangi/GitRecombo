@@ -41,10 +41,13 @@ env/
 *.cache
 .cache/
 repo_cache.db
+repo_cache.json
 .config_hash
+dry_run_payload.json
+COMPLETION_REPORT.txt
 
-# Mission outputs (optional - uncomment to exclude)
-# missions/
+# Mission outputs - contengono risultati ricerche personali
+missions/
 
 # Logs
 *.log
