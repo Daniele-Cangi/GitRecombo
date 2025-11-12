@@ -35,6 +35,6 @@
   "w_health": 0.25,
   "w_relevance": 0.25,
   "w_diversity": 0.15,
-  "exclude_processed": false,
+  "exclude_processed": true,
   "skip_llm_insertion": false
 }
