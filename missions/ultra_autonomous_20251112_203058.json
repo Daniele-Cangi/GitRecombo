@@ -1,0 +1,950 @@
+{
+  "timestamp": "2025-11-12T20:30:58.867442",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a containerized, cross-language discovery pipeline that can rapidly scan heterogeneous data sources (filesystems, HTTP HAR captures, and live GraphQL responses) to find sensitive patterns, protocol anomalies, and operational signals at scale. The core uses Rust for ultra-fast multi-pattern substring search (cloudflare/sliceslice-rs) and a filesystem provider (rust-mcp-stack/rust-mcp-filesystem), Java for HAR parsing (sdstoehr/har-reader), reactive GraphQL probing (graphql-spring-webclient) and Cassandra storage (ing-bank/cassandra-jdbc-wrapper), with TypeScript and WASM for configurable UX and offline browsing. Success criteria: sustained 1–2 GB/s per-core scanning throughput on NVMe data, <200 ms p99 scan latency for 10 MB inputs, ingestion of 10k HAR files/hour, GraphQL drift detection in <5 s, and Prometheus metrics exposure for all stages. Why it matters: teams gain a turnkey, language-agnostic “discovery fabric” for fast, explainable inspection and anomaly surfacing across code, traffic, and endpoints—without introducing heavyweight new paradigms.",
+  "repository_synergy": "THE INSIGHT: Treat everything like telemetry and discover patterns where they hide. Static files on disk, HAR traces from browsers, and live GraphQL endpoints are three silos that rarely share a discovery stack. But when you combine Cloudflare’s SIMD-accelerated substring search (sliceslice-rs) with a language-bridging ingestion layer (Java for HAR and GraphQL) and a scalable store (Cassandra via JDBC), “unknown unknowns” become first-class queries instead of afterthoughts.\n\nTHE STORY: Why these repos? sliceslice-rs gives us an unusually powerful primitive: near-wire-speed multi-pattern substring matching with a tiny Rust footprint. rust-mcp-filesystem abstracts the messy reality of filesystem access across environments into a consistent provider we can embed in a scanning microservice. On the Java side, har-reader cleanly parses HAR so we can convert network traces into searchable payload streams; graphql-spring-webclient brings non-blocking, retryable GraphQL calls to probe live APIs; and cassandra-jdbc-wrapper lets us write discovery results into a linearly scalable store without switching drivers or languages. everyside/swirldb adds a surprising twist—an embedded Rust+WASM index for offline, in-browser exploration of exported results. dtormoen/tsk and rust-cli/termtree make the developer experience ergonomic: runnable tasks and tree views for complex pipelines. yearn/yearn-exporter, while from a different domain, is a pragmatic template for a metrics exporter container—we repurpose it to expose Prometheus metrics for the pipeline. growupanand/ConvoForm provides a lightweight, dynamic UI to configure scans and probes without building a custom frontend from scratch. Lastly, Netflix/dgs-examples-kotlin gives us a live GraphQL service to test drift detection and schema/payload alignment under load.\n\nTHE SYNERGY: Rust handles raw throughput and safety where it matters—scanning GBs of data, memory-mapping large files, and streaming multi-pattern checks. Java shines in protocol fidelity and ecosystem richness—HAR parsing, reactive GraphQL probing, and JDBC-backed persistence. Cassandra bridges the two with a schema tuned for discovery events and time series signals. ConvoForm makes configuration approachable; swirldb allows analysts to take a snapshot and explore results offline with zero backend. The exporter stitches it together with observability guardrails.\n\nTHE INNOVATION: What’s novel is the end-to-end bridge: treating file bytes, HTTP payloads, and GraphQL responses as a single searchable fabric with the same acceleration primitive (sliceslice), wired through Dockerized Rust and Java services, and explorable both in a terminal (termtree) and a browser (swirldb). This makes “find solution to discover...” no longer an ad-hoc script but a composable system.\n\nTHE BRIDGE: We integrate by defining clean, minimal interfaces: a Rust scanning service with an HTTP API, a Java ingestion service that converts HAR and GraphQL payloads into scan jobs, a Cassandra-backed event model, a Prometheus-exporting metrics container, and a ConvoForm-based UI to orchestrate tasks. tsk wraps developer workflows; Compose runs everything the same way everywhere.",
+  "technical_architecture": "Core services and flow:\n\n1) scanner-rs (Rust):\n- Dependencies: cloudflare/sliceslice-rs, rust-mcp-stack/rust-mcp-filesystem, rust-cli/termtree (for CLI output), everyside/swirldb (optional export format tooling shared), dtormoen/tsk (for local orchestration).\n- API: HTTP/JSON.\n  - POST /scan: body = { patterns: [\"secret=\", \"Authorization:\", \"api_key\", ...], path: \"/data/logs\", include_globs: [], exclude_globs: [], max_depth: 4, mmap: true }\n  - POST /scan-bytes: body = { patterns: [], base64: \"...\" }\n  - GET /healthz\n- Implementation:\n  - Patterns compiled into a sliceslice searcher. Use memory-mapped IO (mmap) with bounded-chunk scanning and zero-copy slices. Parallelize over files with a worker pool, each maintaining a prebuilt searcher (no per-request rebuilds).\n  - File access via rust-mcp-filesystem provider to unify local/remote environments and allow future virtual mount points. Return compact hit records (file, byte offset, line/column hints, matched pattern id) to the ingestion pipeline.\n  - Output streaming over HTTP chunked responses to keep latency low.\n\n2) ingest-java (Spring Boot):\n- Dependencies: sdstoehr/har-reader, graphql-java-kickstart/graphql-spring-webclient, ing-bank/cassandra-jdbc-wrapper.\n- Responsibilities:\n  - POST /ingest/har: accept HAR files, parse with har-reader, extract request/response bodies and headers, normalize into a payload stream, forward large bodies to scanner-rs via /scan-bytes, and write normalized metadata + scan hits into Cassandra.\n  - POST /graphql/probe: given endpoint + queries or schema introspection flag, use GraphQL WebClient with retry/backoff to fetch responses, forward bodies to scanner-rs, and persist results.\n  - Manage write batching to Cassandra via JDBC wrapper; partition by tenant/project + day; clustering by source type and timestamp.\n\n3) store (Cassandra):\n- Tables:\n  - discoveries(partition_key: tenant+date, clustering: source_type, ts, file_or_request_id, pattern_id) -> offsets, snippet_hash, severity.\n  - sources(partition_key: tenant, source_id) -> metadata (path/url, tags, size, content_type).\n  - metrics(partition: tenant+date) -> counters: files_scanned, bytes_scanned, hits_total, errors.\n- Rationale: High write throughput for event-style rows and scalable scans by partition/time.\n\n4) metrics-exporter (Python):\n- Based on yearn/yearn-exporter container pattern. Simple service exposing /metrics scraping Cassandra counters and last-seen timestamps. Metric families: discovery_hits_total{pattern,source_type}, scan_throughput_bytes_per_second, ingest_failures_total, graphql_drift_events_total.\n\n5) ui-config (TypeScript):\n- Based on growupanand/ConvoForm, embed a minimal UI to:\n  - Define pattern sets, include/exclude rules, and schedule scans.\n  - Upload HAR files or declare GraphQL endpoints and queries to probe.\n  - Trigger snapshot exports for offline viewing.\n\n6) snapshot-viewer (Browser):\n- Use everyside/swirldb to load an export (NDJSON of discoveries + sources) into a local WASM-backed store. Enable client-side queries like: show hits by pattern over time; filter by host/path; drill into snippets without server connectivity.\n\n7) dev orchestration and CLI:\n- dtormoen/tsk tasks: tsk add build:all; tsk add up; tsk add scan:demo; tasks shell out to docker compose and service APIs.\n- rust-cli/termtree for pretty printing results in terminal: a hits tree by source -> pattern -> location.\n\n8) GraphQL testbed:\n- Include Netflix/dgs-examples-kotlin as a local container to generate realistic GraphQL traffic. The Java ingest service probes this endpoint to verify drift detection (e.g., unexpected fields, anomalies in payloads, or PII strings present in responses).\n\n9) Docker packaging:\n- Multi-service Compose: scanner-rs, ingest-java, cassandra, metrics-exporter, ui-config, dgs-example. Build patterns can borrow ideas from NathanVaughn/webtrees-docker for environment configuration discipline.\n\nKey challenges and solutions:\n- Throughput: Use sliceslice’s multi-pattern searcher with pinned, prebuilt automata; enable mmap and chunked file scanning to avoid copying; shard by file list to CPU cores; backpressure via HTTP streaming between services.\n- Unicode and snippet extraction: Maintain byte offsets and compute UTF-8 safe snippet windows post-match; store hash of a small window to avoid PII-at-rest in the DB.\n- Cassandra hot partitions: Partition by tenant+date and spread scans over time windows; tune compaction and batch sizes; avoid large unbounded partitions by hourly bucketing if needed.\n- HAR bloat and binary payloads: Filter content types; limit body size; store only minimal metadata + hit locations; persist original HAR objects in object storage only when required.\n- GraphQL resiliency: graphql-spring-webclient retry.strategy, circuit breaking via timeouts, and configurable concurrency.\n- Observability: Per-pattern metrics, ingest latencies, queue depths, JVM and Rust process metrics exposed via the exporter.\n\nNon-obvious optimizations:\n- Pre-hash frequent needle sets and reuse compiled searchers across requests.\n- Group patterns by first-byte shard to reduce branch mispredictions.\n- Opportunistic memory locality: scan multiple small files in a single task to amortize searcher warm cache.\n- Client-side swirldb snapshots let analysts triage without hitting Cassandra, reducing backend load.",
+  "expected_impact": "Use cases enabled:\n\n1) Secret and token discovery in large repos: Point scanner-rs at a monorepo or artifacts directory, with patterns like Authorization:, api_key=, or private_key markers. Hits stream back in seconds, partitioned by path and severity, visible in terminal and UI.\n\n2) PII leakage detection in HAR captures: Upload HAR from staging/prod gateways, parse with har-reader, scan response bodies for email, SSN-like substrings, or GDPR red flags. Findings are stored in Cassandra and visualized per endpoint and host.\n\n3) GraphQL drift watch: Periodically probe GraphQL services with graphql-spring-webclient and known queries. Detect newly exposed fields or sensitive substrings in responses and raise a drift metric for early warning.\n\n4) Compliance snapshotting for audits: Export a time-bounded snapshot of discoveries and sources to a swirldb bundle. Auditors open it locally in the browser and validate redactions without backend access.\n\n5) Build-pipeline guardrail: Integrate tsk tasks into CI to run selective scans on changed files and fail builds when certain patterns hit above a threshold. terrmtree output makes console triage quick.\n\n6) Incident forensics at speed: During an incident, mount a disk image via the MCP filesystem provider, scan at GB/s scale, and narrow down exfil indicators by pattern sets tuned to the IOC list.\n\n7) API hygiene for partner onboarding: Before exposing new GraphQL operations, simulate responses and scan for accidental secrets or internal URLs. Export a snapshot to share with partners for transparency.\n\nScalability and extensibility:\n- Horizontal scaling via multiple scanner-rs instances; ingest-java remains stateless and scales behind a load balancer; Cassandra scales with nodes.\n- New data sources can be plugged by converting to the same “bytes to scan + metadata” contract.\n\nLimitations and mitigations:\n- Pure substring search won’t catch obfuscated or encoded secrets; mitigation: add pre-decode transforms (gzip, base64) and optional multi-pass scanning.\n- Cassandra operations require careful schema and compaction tuning; mitigation: start with conservative TTLs and bucketing; provide benchmarks and dashboards.\n- GraphQL probing depends on well-chosen queries; mitigation: allow schema introspection and user-supplied query sets from the UI.\n- HAR payload size can be massive; mitigation: enforce size caps and partial-body sampling with clear caveats.",
+  "innovation_analysis": "Innovation score: 8/10. The novelty is not a new ML model but a clean, high-performance bridge across Rust scanning, Java protocol ingestion, and a browser-native offline viewer—turning diverse data into a unified discovery fabric. It’s pragmatic, fast, and explainable.\n\nImmediate next steps:\n- Prototype scanner-rs with sliceslice-rs and a minimal /scan API; benchmark mmap + multi-pattern throughput.\n- Build ingest-java with HAR upload and GraphQL probe endpoints; wire to Cassandra via JDBC wrapper.\n- Stand up docker-compose with scanner, ingest, cassandra, metrics-exporter, and dgs-example.\n- Implement ConvoForm-based UI for pattern set management and job triggers; add swirldb snapshot export/import.\n\nKey metrics:\n- Bytes scanned per second per core; p99 scan latency for fixed-size inputs.\n- HAR ingestion rate and failure ratio; GraphQL probe latency/distribution.\n- Discovery hit counts by pattern, source, and day; false-positive review outcomes.\n- Cassandra write latencies and partition hotspot metrics; exporter scrape success.\n\nEssential tools/frameworks:\n- Docker/Compose, Rust stable, Spring Boot, Cassandra, Prometheus, and the selected repositories as listed for scanning, ingestion, storage, metrics, and UI.",
+  "sources": [
+    {
+      "name": "cloudflare/sliceslice-rs",
+      "url": "https://github.com/cloudflare/sliceslice-rs",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# sliceslice\n\n[![Actions](https://github.com/cloudflare/sliceslice-rs/workflows/Check/badge.svg)](https://github.com/cloudflare/sliceslice-rs/actions)\n[![Crate](https://img.shields.io/crates/v/sliceslice)](https://crates.io/crates/sliceslice)\n[![Docs](https://docs.rs/sliceslice/badge.svg)](https://docs.rs/sliceslice)\n[![License](https://img.shields.io/crates/l/sliceslice)](LICENSE)\n\nA fast implementation of single-pattern substring search using SIMD acceleration, based on the work [presented by Wojciech Muła](http://0x80.pl/articles/simd-strfind.html). For a fast multi-pattern substring search algorithm, see instead the [`aho-corasick` crate](https://github.com/BurntSushi/aho-corasick).\n\n## Example\n\n```rust\nuse sliceslice::x86::DynamicAvx2Searcher;\n\nfn main() {\n    let searcher = unsafe { DynamicAvx2Searcher::new(b\"ipsum\".to_owned().into()) };\n\n    assert!(unsafe {\n        searcher.search_in(b\"Lorem ipsum dolor sit amet, consectetur adipiscing elit\")\n    });\n\n    assert!(!unsafe {\n        searcher.search_in(b\"foo bar baz qux quux quuz corge grault garply waldo fred\")\n    });\n}\n```\n\n## Benchmarks\n\nWe ran the **[`i386` benchmarks](bench/benches/i386.rs)** on an **HP EliteDesk 800 G2 Tower PC** with an **Intel Core i7-6700 Processor @ 3.40GHz**, **16GB of RAM** and **512GB** of disk space, running **Ubuntu 20.04.1 LTS**, **gcc 9.3.0** and **Rust 1.46.0**.\n\n| **Library**                                                   | **Version**   | **Function**                                                                                                                           | **Short haystack**                  | **Long haystack**                   |\n| ------------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------- |\n| [std](https://doc.rust-lang.org/",
+      "scores": {
+        "novelty": 0.0537,
+        "health": 1.0,
+        "relevance": 0.8107,
+        "author_rep": 0.0,
+        "gem_score": 0.6215
+      },
+      "concepts": [
+        "ms",
+        "https",
+        "sliceslice",
+        "license",
+        "crate https",
+        "substring search",
+        "assert unsafe",
+        "unsafe searcher.search_in"
+      ]
+    },
+    {
+      "name": "rust-mcp-stack/rust-mcp-filesystem",
+      "url": "https://github.com/rust-mcp-stack/rust-mcp-filesystem",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <img width=\"96\" src=\"./docs/_media/rust-mcp-filesystem.png\" alt=\"Rust MCP Filesystem Logo\" width=\"300\">\n</p>\n\n# Rust MCP Filesystem\n\nRust MCP Filesystem is a blazingly fast, asynchronous, and lightweight MCP (Model Context Protocol) server designed for efficient handling of various filesystem operations.\nThis project is a pure Rust rewrite of the JavaScript-based `@modelcontextprotocol/server-filesystem`, offering enhanced capabilities, improved performance, and a robust feature set tailored for modern filesystem interactions.\n\n📝 Refer to the [project documentation](https://rust-mcp-stack.github.io/rust-mcp-filesystem) for installation and configuration instructions.\n\n⭐️ It is also available on [Docker Hub’s MCP Registry](https://hub.docker.com/mcp/server/rust-mcp-filesystem) at: https://hub.docker.com/mcp/server/rust-mcp-filesystem\n\n## Features\n\n- **⚡ High Performance**: Built in Rust for speed and efficiency, leveraging asynchronous I/O to handle filesystem operations seamlessly.\n- **🔒 Read-Only by Default**: Starts with no write access, ensuring safety until explicitly configured otherwise.\n- **🔍 Advanced Glob Search**: Supports full glob pattern matching allowing precise filtering of files and directories using standard glob syntax.For example, patterns like `*.rs`, `src/**/*.txt`, and `logs/error-???.log` are valid and can be used to match specific file types, recursive directory searches, or patterned filenames.\n- **🔄 MCP Roots support**: enabling clients to dynamically modify the list of allowed directories (disabled by default).\n- **📦 ZIP Archive Support**: Tools to create ZIP archives from files or directories and extract ZIP files with ease.\n- **🪶 Lightweight**: Standalone with no external dependencies (e.g., no Node.js, Python etc required), compiled to a single binary with a minimal resource footprint, ideal for both lightweight and extensive deployment scenarios.\n\n#### 👉 Refer to [capabilities](https://rust-mcp-stack.github.io/rust-",
+      "scores": {
+        "novelty": 0.051,
+        "health": 1.0,
+        "relevance": 0.7717,
+        "author_rep": 0.0,
+        "gem_score": 0.4862
+      },
+      "concepts": [
+        "https",
+        "-",
+        "mcp",
+        "rust",
+        "filesystem",
+        "project",
+        "##",
+        "sh"
+      ]
+    },
+    {
+      "name": "pycontw/pycon.tw",
+      "url": "https://github.com/pycontw/pycon.tw",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![codecov.io](https://codecov.io/github/pycontw/pycon.tw/coverage.svg?branch=master)](https://codecov.io/github/pycontw/pycon.tw?branch=master)\n[![travis-ci status](https://api.travis-ci.org/pycontw/pycon.tw.svg?branch-master)](https://travis-ci.org/pycontw/pycon.tw)\n\n# PyCon TW\n\nThis repository serves the website of PyCon TW, Python Conference Taiwan. This project is open source and the license can be found in LICENSE.\n\n## Getting Started\n\n### Requirements\n\n- Git 1.8+\n- Python 3.10.x\n- Yarn 1.0+\n- Node.js 8.0+\n\n### Set up a Development Environment & Run Server\n\n#### Method 1 : `Quick Start`\n* [ Run with docker-compose & shell scripts ](/document/deploy_docker_dev.md)\n#### Method 2 : `Step by step`\n* [ Launch on your local runtime ](/document/deploy_local_env_dev.md)\n\n## Run Tests\n\nTests are managed with [pytest-django](http://pytest-django.readthedocs.org/en/latest/tutorial.html). You can run tests in your local environment:\n\n- Run the following command inside `src`:\n\n        pytest\n\n- To run tests with coverage report:\n\n        pytest --cov=.\n\n## How to Contribute\n\nFollow the [GitHub Flow](https://guides.github.com/introduction/flow/), please **DO NOT push the commits into master directly**. Always create branch by the feature you want to update. You are encouraged to submit a pull request for reviewing before merging things into master.\n\nWe strongly recommend you configure your editor to match our coding styles. You can do this manually, or use an [EditorConfig plugin](http://editorconfig.org/#download) if your editor supports it. An `.editorconfig` file has already been attached to the repository.\n\n\n## Deployment\n\nFor site administrators, please refer to [document/deploy_docker_prod.md](/document/deploy_docker_prod.md).\n",
+      "scores": {
+        "novelty": 0.1029,
+        "health": 0.75,
+        "relevance": 0.7735,
+        "author_rep": 0.0,
+        "gem_score": 0.4464
+      },
+      "concepts": [
+        "-",
+        "run",
+        "https",
+        "run tests",
+        "##",
+        "tests",
+        ".",
+        "branch master"
+      ]
+    },
+    {
+      "name": "yearn/yearn-exporter",
+      "url": "https://github.com/yearn/yearn-exporter",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Yearn Exporter\n\nCollects real-time on-chain numeric data about all Yearn products and exposes it in multiple formats. Currently, it's able to export data from the following networks:\nEthereum, Fantom, Arbitrum, Gnosis, and Optimism.\n\nThe hosted version is available at https://yearn.vision.\n\n# Installation\n\nYou will need:\n\n- Etherscan API key (and API keys for other networks block explorer that you want to use)\n- [Docker](https://www.docker.com/) and [Docker Compose](https://github.com/docker/compose)\n\n## Usage\n\nRun `make up` to start all of the exporters.\n\n### Grafana Dashboard & Exporters\n\nExport the environment variables required in [.env.example](./.env.example) into .env to run the dashboards and exporters:\n\n```bash\n# Make sure all .env variables loaded (`source .env`), check with `echo $variable_name_here`\nmake build && make dashboards\n```\n\nAfter a successful startup, you can go directly to Grafana at `http://localhost:3000`. If you want to change your dashboards you can sign in at the lower left with `admin:admin`.\n\n### Historical TVL\n\n```bash\n# Make sure all .env variables loaded (`source .env`), check with `echo $variable_name_here`\nmake build && make tvl\n```\n\nAfter a successful start up you can access the tvl rest endpoint at `http://localhost:4000`.\n\n### Run All\n```bash\n# Make sure all .env variables loaded (`source .env`), check with `echo $variable_name_here`\nmake build && make up\n# Optionally you can filter `make up` by `make up network=eth` or network=ftm ect for networks supported in the make file\n```\n\n### Setting up GitHub Actions\n\nCreate Access Keys for `apy-exporter-service-user` user.\n\nCreate a new [environment](https://github.com/numan/yearn-exporter/settings/environments) named `production` and add the newly created `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.\n\n## Docker setup\n\nThe dockerized exporter is controlled via `make up` command which is invoked via multiple Makefile recipes.\nIt is possible to specify multiple Makefile args that co",
+      "scores": {
+        "novelty": 0.0525,
+        "health": 0.75,
+        "relevance": 0.7761,
+        "author_rep": 0.0,
+        "gem_score": 0.4304
+      },
+      "concepts": [
+        "make",
+        "-",
+        "make up",
+        "- start",
+        "all",
+        "start",
+        "up",
+        "network"
+      ]
+    },
+    {
+      "name": "dtormoen/tsk",
+      "url": "https://github.com/dtormoen/tsk",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# TSK - AI Agent Task Manager\n\nA Rust CLI tool that lets you delegate development tasks to AI agents running in sandboxed Docker environments. Get back git branches for human review.\n\nCurrently Claude Code and Codex coding agents are supported.\n\n![TSK Demo](./docs/images/tsk-demo.gif)\n\n## What it does\n\nTSK enables a \"lead engineer + AI team\" workflow:\n1. **Assign tasks** to AI agents with natural language descriptions and task type templates to automate prompt boilerplate\n2. **Agents work autonomously** in parallel isolated Docker containers\n3. **Get git branches** back with their changes for review\n4. **Review and merge** using your normal git workflow\n\nThink of it as having a team of engineers who work independently and submit pull requests for review.\n\n## Installation\n\n### Requirements\n\n- [Rust](https://rustup.rs/) - Rust toolchain and Cargo\n- [Docker](https://docs.docker.com/get-docker/) - Container runtime\n- [Git](https://git-scm.com/downloads) - Version control system\n- One of the supported coding agents:\n  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code)\n  - [Codex](https://openai.com/codex/)\n  - Help us support more!\n\n### Install TSK\n\n```bash\n# Install using cargo\ncargo install tsk-ai\n# Or build from source!\ngh repo clone dtormoen/tsk\ncd tsk\ncargo install .\n\n## Commands\n\n### Task Commands\n- `tsk run` - Execute a task immediately\n- `tsk shell` - Start a sandbox container with an interactive shell\n- `tsk add` - Queue a task\n- `tsk list` - View task status and branches\n- `tsk clean` - Clean up completed tasks\n- `tsk delete <task-id>...` - Delete one or more tasks\n- `tsk retry <task-id>...` - Retry one or more tasks\n\n### Server Commands\n- `tsk server start` - Start the TSK server daemon\n- `tsk server stop` - Stop the running TSK server\n\n### Configuration Commands\n- `tsk docker build` - Build required docker images\n- `tsk proxy stop` - Stop the TSK proxy container\n- `tsk template list` - View available task type templates and where they are install",
+      "scores": {
+        "novelty": 0.0502,
+        "health": 0.75,
+        "relevance": 0.7962,
+        "author_rep": 0.0,
+        "gem_score": 0.4294
+      },
+      "concepts": [
+        "-",
+        "tsk",
+        "task",
+        "- tsk",
+        "#",
+        "tasks",
+        "start",
+        "add"
+      ]
+    },
+    {
+      "name": "growupanand/ConvoForm",
+      "url": "https://github.com/growupanand/ConvoForm",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# About ConvoForm\n\n[ConvoForm.com](https://www.convoform.com/?utm_source=genai_works&utm_medium=social&utm_campaign=github_launch) transforms traditional forms into interactive conversational experiences, powered by AI for an enhanced user journey. Think Google Forms, but more engaging and intuitive.\n\n#### Features:\n\n- **AI-Powered Form Generation:** Automatically generate comprehensive forms by describing your needs, streamlining the creation process.\n- **Real-time Form Editing and Preview:** Edit forms with live changes previewed on the same page, providing immediate feedback.\n- **Customizable Submission Pages:** Tailor the submission page with your organization's branding and personalized messages.\n\n#### Learnings\n\nIn the course of building it from scratch, I penned down some insightful pieces on Medium reflecting on my journey and learning, I hope these articles provide value to your coding journey.\n\n- [A Comprehensive Guide to Easily Switch from Prisma to Drizzle ORM](https://medium.com/@growupanand/a-comprehensive-guide-to-easily-switch-from-prisma-to-drizzle-orm-c290f8ed8ef3)\n- [Transitioning from Monorepo to Turborepo: My Development Journey with ConvoForm.com](https://medium.com/@growupanand/transitioning-from-monorepo-to-turborepo-my-development-journey-with-convoform-com-691b9d19f397)\n\n## Tech Stack\n\n- **Frontend**: [Next.js](https://nextjs.org) for optimized server and client rendering.\n- **Backend**: [tRPC](https://trpc.io) for type-safe API development.\n- **AI Integration**: [gpt-4o-mini](https://platform.openai.com/docs/models/gpt-4o-mini) for generate form, conversation with user to collect required form information\n- **Real-time updates**: [Socket.io](https://socket.io/) for live form progress tracking.\n\n## Community and Support\n\nJoin our community on [Discord](https://discord.gg/aeYtKyn2E2) to get support, share feedback, and connect with other users and developers:\n\n## Contributing\n\nFeel free to contribute to the development by opening issues, pro",
+      "scores": {
+        "novelty": 0.0426,
+        "health": 0.75,
+        "relevance": 0.7691,
+        "author_rep": 0.0,
+        "gem_score": 0.4256
+      },
+      "concepts": [
+        "https",
+        "-",
+        "bash",
+        "bash pnpm",
+        "http //localhost",
+        "####",
+        "form",
+        "##"
+      ]
+    },
+    {
+      "name": "ari4java/ari4java",
+      "url": "https://github.com/ari4java/ari4java",
+      "description": "",
+      "language": "module",
+      "license": "LGPL-3.0",
+      "readme_snippet": "# ARI4Java\n\nThe Asterisk REST Interface (ARI) bindings for Java.\n\n[![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.github.ari4java/ari4java/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.github.ari4java/ari4java)\n[![javadoc](https://javadoc.io/badge2/io.github.ari4java/ari4java/javadoc.svg)](https://javadoc.io/doc/io.github.ari4java/ari4java)\n[![Build](https://github.com/ari4java/ari4java/actions/workflows/gradle.yml/badge.svg?branch=master)](https://github.com/ari4java/ari4java/actions?query=workflow%3A%22ARI4Java+Build%22)\n\n## Description\n\nARI is an interface available on Asterisk 11+ that lets you write applications\nthat run externally and control call flow through REST calls while receiving\nevents on a websocket.\n\nIn order to support different versions of the API, what we do is we maintain concrete implementations\nfor each version of the API, but we also have general interfaces that are used to work with objects\nacross different versions.\n\n### Getting started\n\nSimply add the library and an SLF4J logger to your package config, here is an example using Gradle\n```\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n    implementation 'io.github.ari4java:ari4java:+'\n    implementation 'ch.qos.logback:logback-classic:1.2.10'\n}\n```\n\nDue to the sun setting of JCenter the jar is now publish through Sonatype to Maven Central but under a new groupId.\nThe groupId is now `io.github.ari4java` make sure you update your build files if you used `ch.loway.oss.ari4java`.\n\n## Documentation\n- The [CHANGELOG](https://github.com/ari4java/ari4java/blob/master/CHANGELOG.md)\n- The [Wiki](https://github.com/ari4java/ari4java/wiki) has some more info on how to use the project\n    - [Getting Started](https://github.com/ari4java/ari4java/wiki/Getting-Started)\n    - [Examples](https://github.com/ari4java/ari4java/wiki/Examples)\n\n## Licensing\nThe library is released under the GNU LGPL (see [LICENSE](https://github.com/ari4java/ari4java/blob/master/LICENSE",
+      "scores": {
+        "novelty": 0.1685,
+        "health": 0.5,
+        "relevance": 0.7649,
+        "author_rep": 0.0,
+        "gem_score": 0.4052
+      },
+      "concepts": [
+        "https",
+        "-",
+        "maven central",
+        "getting started",
+        "asterisk",
+        "build",
+        "##",
+        "."
+      ]
+    },
+    {
+      "name": "marlowe-lang/marlowe-cardano",
+      "url": "https://github.com/marlowe-lang/marlowe-cardano",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<h2 align=\"center\">\n  <a href=\"\" target=\"blank_\">\n    <img src=\"./doc/image/logo.svg\" alt=\"Logo\" height=\"75\">\n  </a>\n  <br>\n  Implementation of Marlowe On Cardano (Runtime) \n</h2>\n  <p align=\"center\">\n    <a href=\"https://github.com/input-output-hk/marlowe-cardano/releases\"><img src=\"https://img.shields.io/github/v/release/input-output-hk/marlowe-cardano?style=for-the-badge\" /></a>\n  </p>\n<div align=\"center\">\n  <a href=\"\"><img src=\"https://img.shields.io/badge/stability-beta-33bbff.svg\" alt=\"Beta\"></a>\n  <a href=\"./LICENSE\"><img src=\"https://img.shields.io/badge/License-Apache_2.0-blue.svg\"></a>\n  <a href=\"https://discord.com/invite/cmveaxuzBn\"><img src=\"https://img.shields.io/discord/826816523368005654?label=Chat%20on%20Discord\"></a>\n</div>\n\n> [!IMPORTANT] \n> This Marlowe repository will soon be moved to https://github.com/marlowe-lang. The new repositories will be administered by an independent vehicle, a not-for-profit organization currently being set up by the transition team.<br> \n> This will allow us to ensure community representation and stewardship. Future developments and support for Marlowe are transitioning to a community-driven model initially led by [Simon Thompson](https://github.com/simonjohnthompson), [Nicolas Henin](https://github.com/nhenin) and [Tomasz Rybarczyk](https://github.com/paluh). <br>\n> See [here](https://github.com/marlowe-lang/.github/blob/main/profile/transition.md) for details.\n\n\nMarlowe-Cardano is an implementation of Marlowe for the Cardano blockchain, built on top of Plutus.\n\nThis repository contains:\n\n* The Marlowe Runtime and Marlowe Runtime Web\n* The implementation of the Marlowe domain-specific language in Haskell.\n* Tools for working with Marlowe, including static analysis.\n* A selection of examples using Marlowe, including a number based on the ACTUS financial standard.\n\n## Documentation\n\n### User documentation\n\nThe main documentation for the whole Plutus ecosystem is located https://plutus.readthedocs.io/en/latest/[here].\n\n",
+      "scores": {
+        "novelty": 0.1431,
+        "health": 0.5,
+        "relevance": 0.7853,
+        "author_rep": 0.0,
+        "gem_score": 0.3992
+      },
+      "concepts": [
+        "https",
+        ".",
+        "build",
+        "marlowe",
+        "nix",
+        "docker",
+        "cabal",
+        "haskell packages"
+      ]
+    },
+    {
+      "name": "sous-chefs/ark",
+      "url": "https://github.com/sous-chefs/ark",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# ark cookbook\n\n[![Cookbook Version](https://img.shields.io/cookbook/v/ark.svg)](https://supermarket.chef.io/cookbooks/ark)\n[![CI State](https://github.com/sous-chefs/ark/workflows/ci/badge.svg)](https://github.com/sous-chefs/ark/actions?query=workflow%3Aci)\n[![OpenCollective](https://opencollective.com/sous-chefs/backers/badge.svg)](#backers)\n[![OpenCollective](https://opencollective.com/sous-chefs/sponsors/badge.svg)](#sponsors)\n[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)\n\n## Overview\n\nThis cookbook provides `ark`, a resource for managing software archives. It manages the fetch-unpack-configure-build-install process common to installing software from source, or from binary distributions that are not fully fledged OS packages.\n\nThis cookbook started its life as a modified version of Infochimp's install_from cookbook. It has since been heavily refactored and extended to meet different use cases.\n\nGiven a simple project archive available at a url:\n\n```ruby\nark 'pig' do\n  url 'http://apache.org/pig/pig-0.8.0.tar.gz'\nend\n```\n\nThe `ark` resource will:\n\n- fetch it to to `/var/cache/chef/`\n- unpack it to the default path (`/usr/local/pig-0.8.0`)\n- create a symlink for `:home_dir` (`/usr/local/pig`) pointing to path\n- add specified binary commands to the environment `PATH` variable\n\nBy default, the ark will not run again if the `:path` is not empty. Ark provides many actions to accommodate different use cases, such as `:dump`, `:cherry_pick`, `:put`, and `:install_with_make`.\n\nFor remote files ark supports URLs using the [remote_file](http://docs.chef.io/resource_remote_file.html) resource. Local files are accessed with the `file://` syntax.\n\n## Maintainers\n\nThis cookbook is maintained by the Sous Chefs. The Sous Chefs are a community of Chef cookbook maintainers working together to maintain important cookbooks. If you’d like to know more please visit [sous-chefs.org](https://sous-chefs.org/) or come",
+      "scores": {
+        "novelty": 0.0669,
+        "health": 0.5,
+        "relevance": 0.7763,
+        "author_rep": 0.0,
+        "gem_score": 0.3715
+      },
+      "concepts": [
+        "-",
+        "path",
+        "default",
+        "ark",
+        "directory",
+        "file",
+        "- node",
+        "node ark"
+      ]
+    },
+    {
+      "name": "sdstoehr/har-reader",
+      "url": "https://github.com/sdstoehr/har-reader",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# HAR Reader\n\nA Java library for reading and writing [HTTP Archive (HAR)](http://www.softwareishard.com/blog/har-12-spec/) files.\n\n[![Build Status](https://app.travis-ci.com/sdstoehr/har-reader.svg?branch=main)](https://app.travis-ci.com/sdstoehr/har-reader)\n[![codecov](https://codecov.io/github/sdstoehr/har-reader/graph/badge.svg?token=TQ9XVRjg4A)](https://codecov.io/github/sdstoehr/har-reader)\n[![Maven Central](https://img.shields.io/maven-central/v/de.sstoehr/har-reader.svg)](http://mvnrepository.com/artifact/de.sstoehr/har-reader)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n## Features\n\n- ✅ Read HAR files from File, String, or InputStream\n- ✅ Write HAR data to File, OutputStream, Writer, or byte array\n- ✅ Fluent builder API for creating HAR data structures\n- ✅ Support for non-standard date formats (LAX mode)\n- ✅ Customizable Jackson ObjectMapper configuration\n- ✅ Support for additional non-standard HAR fields\n- ✅ Fully compliant with HAR 1.2 specification\n- ✅ Records-based immutable model (Java 17+)\n\n## Table of Contents\n\n- [Requirements](#requirements)\n- [Installation](#installation)\n- [Usage](#usage)\n  - [Reading HAR Files](#reading-har-files)\n  - [Writing HAR Files](#writing-har-files)\n  - [Building HAR Data](#building-har-data)\n  - [Customization](#customization)\n- [Release Notes](#release-notes)\n- [License](#license)\n\n## Requirements\n\n- Java 17 or higher\n- Jackson 3.x (for version 4.0.0+)\n- Jackson 2.x (for version 3.1.6 and earlier)\n\n## Installation\n\nAdd the dependency to your `pom.xml`:\n\n```xml\n<dependency>\n  <groupId>de.sstoehr</groupId>\n  <artifactId>har-reader</artifactId>\n  <version>4.0.0</version>\n</dependency>\n```\n\n## Usage\n\n### Reading HAR Files\n\n#### From File\n\n```java\nHarReader harReader = new HarReader();\nHar har = harReader.readFromFile(new File(\"myhar.har\"));\nSystem.out.println(har.log().creator().name());\n```\n\n#### From String\n\n```java\nHarReader harReader = new HarReader();\nHar ",
+      "scores": {
+        "novelty": 0.0637,
+        "health": 0.5,
+        "relevance": 0.7689,
+        "author_rep": 0.0,
+        "gem_score": 0.3684
+      },
+      "concepts": [
+        "har",
+        "-",
+        "har har",
+        "java",
+        "https",
+        "harreader harreader",
+        "harwriter harwriter",
+        "harreader"
+      ]
+    },
+    {
+      "name": "ing-bank/cassandra-jdbc-wrapper",
+      "url": "https://github.com/ing-bank/cassandra-jdbc-wrapper",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# JDBC wrapper of the Java Driver for Apache Cassandra®\n\n[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.txt)\n![Build Status](https://img.shields.io/github/actions/workflow/status/ing-bank/cassandra-jdbc-wrapper/ci-workflow.yml)\n[![Maven Central](https://img.shields.io/maven-central/v/com.ing.data/cassandra-jdbc-wrapper)](https://search.maven.org/search?q=g:com.ing.data%20AND%20cassandra-jdbc-wrapper)\n[![Javadoc](https://javadoc.io/badge2/com.ing.data/cassandra-jdbc-wrapper/javadoc.svg)](https://javadoc.io/doc/com.ing.data/cassandra-jdbc-wrapper)\n[![Wiki](https://img.shields.io/badge/wiki-documentation-black?logo=github)](https://github.com/ing-bank/cassandra-jdbc-wrapper/wiki)\n\nThis is a JDBC wrapper of the Java Driver for Apache Cassandra®, which offers a simple JDBC compliant API to work with \nCQL3.\n\nThis JDBC wrapper is based on a fork of the project\n[adejanovski/cassandra-jdbc-wrapper](https://github.com/adejanovski/cassandra-jdbc-wrapper/), which is no longer \nmaintained. We would especially like to thank its author.\n\n## Features\n\nThe JDBC wrapper offers access to most of the core module features:\n  - Asynchronous: the driver uses the new CQL binary protocol asynchronous capabilities. Only a relatively low number \n  of connections per nodes needs to be maintained open to achieve good performance.\n  - Nodes discovery: the driver automatically discovers and uses all nodes of the C* cluster, including newly \n  bootstrapped ones.\n  - Transparent fail-over: if C* nodes fail or become unreachable, the driver automatically and transparently tries \n  other nodes and schedules reconnection to the dead nodes in the background.\n  - Convenient schema access: the driver exposes a C* schema in a usable way.\n\n## Getting Started\n\n### Prerequisites\n\nThe wrapper uses Java Driver for Apache Cassandra® 4.x. This driver is designed for Apache \nCassandra® 2.1+ and DataStax Enterprise (5.0+). So, it will",
+      "scores": {
+        "novelty": 0.0633,
+        "health": 0.5,
+        "relevance": 0.7578,
+        "author_rep": 0.0,
+        "gem_score": 0.3663
+      },
+      "concepts": [
+        "jdbc",
+        "https",
+        "driver",
+        "cassandra",
+        "jdbc wrapper",
+        "apache cassandra",
+        ".",
+        "wrapper"
+      ]
+    },
+    {
+      "name": "ROBOTIS-GIT/hls_lfcd_lds_driver",
+      "url": "https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "# LDS-01 (HLDS HLS-LFCD-LDS)\n<img src=\"http://emanual.robotis.com/assets/images/platform/turtlebot3/appendix_lds/lds_small.png\" width=\"400\">\n\n- Active Branches: noetic, humble, jazzy, main\n- Legacy Branches: *-devel\n\n## Open Source Projects Related to TurtleBot3\n- [turtlebot3](https://github.com/ROBOTIS-GIT/turtlebot3)\n- [turtlebot3_msgs](https://github.com/ROBOTIS-GIT/turtlebot3_msgs)\n- [turtlebot3_simulations](https://github.com/ROBOTIS-GIT/turtlebot3_simulations)\n- [turtlebot3_manipulation](https://github.com/ROBOTIS-GIT/turtlebot3_manipulation)\n- [turtlebot3_manipulation_simulations](https://github.com/ROBOTIS-GIT/turtlebot3_manipulation_simulations)\n- [turtlebot3_applications](https://github.com/ROBOTIS-GIT/turtlebot3_applications)\n- [turtlebot3_applications_msgs](https://github.com/ROBOTIS-GIT/turtlebot3_applications_msgs)\n- [turtlebot3_machine_learning](https://github.com/ROBOTIS-GIT/turtlebot3_machine_learning)\n- [turtlebot3_autorace](https://github.com/ROBOTIS-GIT/turtlebot3_autorace)\n- [turtlebot3_home_service_challenge](https://github.com/ROBOTIS-GIT/turtlebot3_home_service_challenge)\n- [hls_lfcd_lds_driver](https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver)\n- [ld08_driver](https://github.com/ROBOTIS-GIT/ld08_driver)\n- [open_manipulator](https://github.com/ROBOTIS-GIT/open_manipulator)\n- [dynamixel_sdk](https://github.com/ROBOTIS-GIT/DynamixelSDK)\n- [OpenCR-Hardware](https://github.com/ROBOTIS-GIT/OpenCR-Hardware)\n- [OpenCR](https://github.com/ROBOTIS-GIT/OpenCR)\n\n## Documentation, Videos, and Community\n\n### Official Documentation\n- ⚙️ **[ROBOTIS DYNAMIXEL](https://dynamixel.com/)**\n- 📚 **[ROBOTIS e-Manual for Dynamixel SDK](http://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_sdk/overview/)**\n- 📚 **[ROBOTIS e-Manual for TurtleBot3](http://turtlebot3.robotis.com/)**\n- 📚 **[ROBOTIS e-Manual for OpenMANIPULATOR-X](https://emanual.robotis.com/docs/en/platform/openmanipulator_x/overview/)**\n\n### Learning Resources\n- 🎥 **[ROBOTIS YouTube Channel](h",
+      "scores": {
+        "novelty": 0.0485,
+        "health": 0.5,
+        "relevance": 0.7777,
+        "author_rep": 0.0,
+        "gem_score": 0.3663
+      },
+      "concepts": [
+        "-",
+        "https",
+        "- robotis",
+        "robotis",
+        "robotis e-manual",
+        "turtlebot3",
+        "community",
+        "youtube"
+      ]
+    },
+    {
+      "name": "NathanVaughn/webtrees-docker",
+      "url": "https://github.com/NathanVaughn/webtrees-docker",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Docker Image for [webtrees](https://webtrees.net/)\n\n[![](https://github.com/NathanVaughn/webtrees-docker/workflows/Check%20and%20Push%20Updates/badge.svg)](https://github.com/NathanVaughn/webtrees-docker)\n[![](https://img.shields.io/docker/v/nathanvaughn/webtrees)](https://hub.docker.com/r/nathanvaughn/webtrees)\n[![](https://img.shields.io/docker/image-size/nathanvaughn/webtrees)](https://hub.docker.com/r/nathanvaughn/webtrees)\n[![](https://img.shields.io/docker/pulls/nathanvaughn/webtrees)](https://hub.docker.com/r/nathanvaughn/webtrees)\n[![](https://img.shields.io/github/license/nathanvaughn/webtrees-docker)](https://github.com/NathanVaughn/webtrees-docker)\n\nThis is a multi-architecture, up-to-date, Docker image for\n[webtrees](https://github.com/fisharebest/webtrees) served over HTTP or HTTPS.\nThis can be put behind a reverse proxy such as CloudFlare or Traefik, or\nrun standalone.\n\n## Usage\n\n### Quickstart\n\nIf you want to jump right in, take a look at the provided\n[docker-compose.yml](https://github.com/NathanVaughn/webtrees-docker/blob/master/docker-compose.yml).\n\n### Environment Variables\n\nThere are many environment variables available to help automatically configure\nthe container. For any environment variable you do not define,\nthe default value will be used.\n\n> **🚨 WARNING 🚨**\n> These environment variables will be visible in the webtrees control panel\n> under \"Server information\". Either lock down the control panel\n> to administrators, or use the webtrees setup wizard.\n\n| Environment Variable                                                       | Required | Default               | Notes                                                                                                                                                                                                             |\n| -------------------------------------------------------------------------- | -------- | --------------------- | ---------------------------------------------------------",
+      "scores": {
+        "novelty": 0.0492,
+        "health": 0.5,
+        "relevance": 0.7624,
+        "author_rep": 0.0,
+        "gem_score": 0.3631
+      },
+      "concepts": [
+        "https",
+        "yes",
+        "no",
+        "database",
+        "mysql",
+        "webtrees",
+        "relative /var/www/webtrees/data/",
+        "mysql database"
+      ]
+    },
+    {
+      "name": "rust-cli/termtree",
+      "url": "https://github.com/rust-cli/termtree",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# termtree [![Main](https://github.com/rust-cli/termtree/actions/workflows/main.yml/badge.svg)](https://github.com/rust-cli/termtree/actions/workflows/main.yml)\n\n> Visualize tree-like data on the command-line\n\n[API documentation](https://docs.rs/termtree)\n\n## Example\n\nAn example program is provided under the \"examples\" directory to mimic the `tree(1)`\nlinux program\n\n```bash\n$ cargo run --example tree target\n    Finished debug [unoptimized + debuginfo] target(s) in 0.0 secs\n     Running `target/debug/examples/tree target`\ntarget\n└── debug\n    ├── .cargo-lock\n    ├── .fingerprint\n    |   └── termtree-21a5bdbd42e0b6da\n    |       ├── dep-example-tree\n    |       ├── dep-lib-termtree\n    |       ├── example-tree\n    |       ├── example-tree.json\n    |       ├── lib-termtree\n    |       └── lib-termtree.json\n    ├── build\n    ├── deps\n    |   └── libtermtree.rlib\n    ├── examples\n    |   ├── tree\n    |   └── tree.dSYM\n    |       └── Contents\n    |           ├── Info.plist\n    |           └── Resources\n    |               └── DWARF\n    |                   └── tree\n    ├── libtermtree.rlib\n    └── native\n```\n\n## Related Crates\n\n- [`treeline`](https://crates.io/crates/treeline): termtree was forked from this.\n- [`tree_decorator`](https://crates.io/crates/tree_decorator)\n- [`xtree`](https://crates.io/crates/xtree)\n- [`ptree`](https://crates.io/crates/ptree)\n\n## License\n\nLicensed under MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)\n",
+      "scores": {
+        "novelty": 0.0464,
+        "health": 0.5,
+        "relevance": 0.7656,
+        "author_rep": 0.0,
+        "gem_score": 0.3625
+      },
+      "concepts": [
+        "https",
+        "tree",
+        "target",
+        "-",
+        "##",
+        "termtree",
+        "example",
+        "program"
+      ]
+    },
+    {
+      "name": "everyside/swirldb",
+      "url": "https://github.com/everyside/swirldb",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# SwirlDB\n\nCross-platform CRDT database built on Automerge. Runs in browsers via WebAssembly and as a native Rust sync server.\n\n> ⚠️ **UNDER ACTIVE DEVELOPMENT** ⚠️\n>\n> SwirlDB is in early development and not ready for production use.\n> The API is unstable and subject to breaking changes.\n\n📚 **[Full Documentation](https://docs.swirldb.org)**\n\n## Design\n\n- **CRDT-based**: Built on Automerge for automatic conflict resolution\n- **Cross-platform**: Browser WASM (~489KB gzipped) and native Rust server with different optimizations\n- **Pluggable storage**: In-memory, LocalStorage, IndexedDB, or redb\n- **Real-time sync**: WebSocket-based synchronization server\n- **Observable**: Field-level change tracking via observers\n- **Policy engine**: Access control for subscriptions\n\n## Architecture\n\n### Browser and Server Builds\n\n- **Browser**: WebAssembly module with JavaScript bindings\n- **Server**: Native Rust binary for WebSocket/HTTP sync\n\n### Crate Structure\n\n- **swirldb-core**: Platform-agnostic CRDT engine and storage traits\n- **swirldb-browser**: WASM bindings with localStorage and IndexedDB adapters\n- **swirldb-server**: Sync server with redb storage and subscription management\n\nSee [BUILD.md](./BUILD.md) for build instructions.\n\n## Prerequisites\n\n- **Rust** - Install from [rustup.rs](https://rustup.rs)\n- **pnpm** - Install with `npm install -g pnpm` or `brew install pnpm`\n\n## Quick Start\n\n### Browser (WASM)\n\n**1. Build the WASM package:**\n```bash\n# From repository root\npnpm run build:wasm\n```\n\n**2. Use in your application:**\n```javascript\nimport { SwirlDB } from '@swirldb/js';\n\n// Configure with LocalStorage adapter (data persists automatically)\nconst db = await SwirlDB.withLocalStorage('my-app');\n\n// Use natural property access via Proxies\ndb.data.user.name = 'Alice';\ndb.data.user.age = 30;\n\n// Read values\nconsole.log(db.data.user.name.$value); // 'Alice'\n\n// Observe changes reactively\ndb.data.user.name.$observe((newValue) => {\n  console.log('Name changed:', newValue);\n})",
+      "scores": {
+        "novelty": 0.0435,
+        "health": 0.5,
+        "relevance": 0.7689,
+        "author_rep": 0.0,
+        "gem_score": 0.3611
+      },
+      "concepts": [
+        "-",
+        "###",
+        "server",
+        "build",
+        "//",
+        "##",
+        "browser",
+        "wasm"
+      ]
+    },
+    {
+      "name": "graphql-java-kickstart/graphql-spring-webclient",
+      "url": "https://github.com/graphql-java-kickstart/graphql-spring-webclient",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# GraphQL Spring Webclient\n[![Maven Central](https://img.shields.io/maven-central/v/com.graphql-java-kickstart/graphql-webclient-spring-boot-starter.svg)](https://maven-badges.herokuapp.com/maven-central/com.graphql-java-kickstart/graphql-webclient-spring-boot-starter)\n![Publish snapshot](https://github.com/graphql-java-kickstart/graphql-spring-webclient/workflows/Publish%20snapshot/badge.svg)\n[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=graphql-java-kickstart_graphql-spring-webclient&metric=alert_status)](https://sonarcloud.io/dashboard?id=graphql-java-kickstart_graphql-spring-webclient)\n[![GitHub contributors](https://img.shields.io/github/contributors/graphql-java-kickstart/graphql-spring-webclient)](https://github.com/graphql-java-kickstart/graphql-spring-webclient/graphs/contributors)\n[![Discuss on GitHub](https://img.shields.io/badge/GitHub-discuss-orange)](https://github.com/graphql-java-kickstart/graphql-spring-webclient/discussions)\n\n\nReactive GraphQL client for consuming GraphQL APIs from a Spring Boot application.\nProvides OAuth2 authorization through configuration.\n\n## Getting started\n\nAdd the starter to your project.\n\nWhen using Maven:\n```xml\n<dependency>\n  <groupId>com.graphql-java-kickstart</groupId>\n  <artifactId>graphql-webclient-spring-boot-starter</artifactId>\n  <version>2.0.0</version>\n</dependency>\n```\n\nWhen using gradle:\n```groovy\nimplementation \"com.graphql-java-kickstart:graphql-webclient-spring-boot-starter:2.0.0\"\n```\n\nConfigure at least the URL of the GraphQL API to consume:\n```yaml\ngraphql:\n  client:\n    url: https://graphql.github.com/graphql\n```\n\nThe starter creates a Spring bean of type `GraphQLWebClient` that you can use in your\nclasses to send queries. A simplified example might look like this:\n\n```java\n@Component\nclass MyClass {\n  \n  private final GraphQLWebClient graphQLWebClient;\n  \n  MyClass(GraphQLWebClient graphQLWebClient) {\n    this.graphQLWebClient = graphQLWebClient;\n  }\n  \n  String helloW",
+      "scores": {
+        "novelty": 0.0512,
+        "health": 0.5,
+        "relevance": 0.7512,
+        "author_rep": 0.0,
+        "gem_score": 0.3597
+      },
+      "concepts": [
+        "https",
+        "_ only",
+        "only when",
+        "when retry.strategy",
+        "when",
+        "retry.strategy",
+        "_",
+        "_."
+      ]
+    },
+    {
+      "name": "rtoal/ple",
+      "url": "https://github.com/rtoal/ple",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Programming Language Explorations\n\nA collection of illustrative examples in over 100 programming languages, including every code snippet used in each edition of the book [Programming Language Explorations](https://rtoal.github.io/ple).\n\n![](docs/resources/05ab1e-logo-24.png)\n![](docs/resources/ada-logo-24.png)\n![](docs/resources/agda-logo-24.png)\n![](docs/resources/algol68-logo-24.png)\n![](docs/resources/apl-logo-24.png)\n![](docs/resources/assemblyscript-logo-24.png)\n![](docs/resources/awk-logo-24.png)\n![](docs/resources/ballerina-logo-24.png)\n![](docs/resources/bash-logo-24.png)\n![](docs/resources/berry-logo-24.png)\n![](docs/resources/boo-logo-24.png)\n![](docs/resources/c-logo-24.png)\n![](docs/resources/c3-logo-24.png)\n![](docs/resources/carbon-logo-24.png)\n![](docs/resources/ceylon-logo-24.png)\n![](docs/resources/chapel-logo-24.png)\n![](docs/resources/citrine-logo-24.png)\n![](docs/resources/clean-logo-24.png)\n![](docs/resources/clojure-logo-24.png)\n![](docs/resources/clu-logo-24.png)\n![](docs/resources/cobol-logo-24.png)\n![](docs/resources/coffeescript-logo-24.png)\n![](docs/resources/commonlisp-logo-24.png)\n![](docs/resources/cpp-logo-24.png)\n![](docs/resources/crystal-logo-24.png)\n![](docs/resources/csharp-logo-24.png)\n![](docs/resources/d-logo-24.png)\n![](docs/resources/dart-logo-24.png)\n![](docs/resources/eiffel-logo-24.png)\n![](docs/resources/elixir-logo-24.png)\n![](docs/resources/elm-logo-24.png)\n![](docs/resources/erlang-logo-24.png)\n![](docs/resources/factor-logo-24.png)\n![](docs/resources/fantom-logo-24.png)\n![](docs/resources/fish-logo-24.png)\n![](docs/resources/forth-logo-24.png)\n![](docs/resources/fortran-logo-24.png)\n![](docs/resources/fsharp-logo-24.png)\n![](docs/resources/futhark-logo-24.png)\n![](docs/resources/gdscript-logo-24.png)\n![](docs/resources/gleam-logo-24.png)\n![](docs/resources/gml-logo-24.png)\n![](docs/resources/go-logo-24.png)\n![](docs/resources/gosu-logo-24.png)\n![](docs/resources/gp-logo-24.png)\n![](docs/resources/grain-logo-24.png)\n",
+      "scores": {
+        "novelty": 0.1175,
+        "health": 0.25,
+        "relevance": 0.791,
+        "author_rep": 0.0,
+        "gem_score": 0.3325
+      },
+      "concepts": [
+        "https",
+        "language",
+        "programming language",
+        "programming",
+        "language explorations",
+        "readme files",
+        "examples",
+        "languages"
+      ]
+    },
+    {
+      "name": "Netflix/dgs-examples-kotlin",
+      "url": "https://github.com/Netflix/dgs-examples-kotlin",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "Kotlin DGS Framework example\n=====\n\nThis repository is an example application for the [DGS Framework](https://netflix.github.io/dgs).\nThe example is a standalone GraphQL server in Java.\n\nIt shows the following features:\n* [Datafetchers](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/datafetchers/ShowsDataFetcher.kt#L34)\n* [Mutations](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/datafetchers/ReviewsDataFetcher.kt#L56) \n* [DataLoader to prevent the N+1 problem](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/datafetchers/ReviewsDataFetcher.kt#L46)\n* [Query testing](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/test/kotlin/com/example/demo/datafetchers/ShowsDataFetcherTest.kt#L74)\n* [Using a generated Query API](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/test/kotlin/com/example/demo/datafetchers/ShowsDataFetcherTest.kt#L124)  \n* [File Upload](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/datafetchers/ArtworkUploadDataFetcher.kt#L34)\n* [Using the Gradle codegen plugin](https://github.com/Netflix/dgs-examples-kotlin/blob/main/build.gradle.kts#L50)\n* [A custom instrumentation implementation](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/instrumentation/ExampleTracingInstrumentation.kt)\n* [Subscriptions](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/datafetchers/ReviewsDataFetcher.kt#L64)\n* [Testing a subscription](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/test/kotlin/com/example/demo/datafetchers/ReviewSubscriptionTest.kt#L57)  \n* [Registering an optional scalar from graphql-java](https://github.com/Netflix/dgs-examples-kotlin/blob/main/src/main/kotlin/com/example/demo/scalars/DateTimeScalarRegistration.kt#L32)\n\nOther examples\n---\n\nThere are other examples of usin",
+      "scores": {
+        "novelty": 0.058,
+        "health": 0.25,
+        "relevance": 0.7667,
+        "author_rep": 0.0,
+        "gem_score": 0.3034
+      },
+      "concepts": [
+        "https",
+        "example",
+        ".",
+        "show",
+        "dgs framework",
+        "application",
+        "reviews",
+        "subscription https"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "java"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 18,
+    "explore_longtail": false,
+    "max_stars": 100,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution to discover......",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "java"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 32,
+    "probed": 20,
+    "selected": 18,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "cloudflare/sliceslice-rs",
+        "url": "https://github.com/cloudflare/sliceslice-rs",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.0537,
+        "relevance": 0.8107,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "ms",
+          "https",
+          "sliceslice",
+          "license",
+          "crate https",
+          "substring search",
+          "assert unsafe",
+          "unsafe searcher.search_in"
+        ],
+        "gem_score": 0.6215
+      },
+      {
+        "name": "rust-mcp-stack/rust-mcp-filesystem",
+        "url": "https://github.com/rust-mcp-stack/rust-mcp-filesystem",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.051,
+        "relevance": 0.7717,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "mcp",
+          "rust",
+          "filesystem",
+          "project",
+          "##",
+          "sh"
+        ],
+        "gem_score": 0.4862
+      },
+      {
+        "name": "pycontw/pycon.tw",
+        "url": "https://github.com/pycontw/pycon.tw",
+        "license": "MIT",
+        "role": "module (HTML)",
+        "novelty_score": 0.1029,
+        "relevance": 0.7735,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "run",
+          "https",
+          "run tests",
+          "##",
+          "tests",
+          ".",
+          "branch master"
+        ],
+        "gem_score": 0.4464
+      },
+      {
+        "name": "yearn/yearn-exporter",
+        "url": "https://github.com/yearn/yearn-exporter",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.0525,
+        "relevance": 0.7761,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "make",
+          "-",
+          "make up",
+          "- start",
+          "all",
+          "start",
+          "up",
+          "network"
+        ],
+        "gem_score": 0.4304
+      },
+      {
+        "name": "dtormoen/tsk",
+        "url": "https://github.com/dtormoen/tsk",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.0502,
+        "relevance": 0.7962,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "tsk",
+          "task",
+          "- tsk",
+          "#",
+          "tasks",
+          "start",
+          "add"
+        ],
+        "gem_score": 0.4294
+      },
+      {
+        "name": "growupanand/ConvoForm",
+        "url": "https://github.com/growupanand/ConvoForm",
+        "license": "Apache-2.0",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.0426,
+        "relevance": 0.7691,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "bash",
+          "bash pnpm",
+          "http //localhost",
+          "####",
+          "form",
+          "##"
+        ],
+        "gem_score": 0.4256
+      },
+      {
+        "name": "ari4java/ari4java",
+        "url": "https://github.com/ari4java/ari4java",
+        "license": "LGPL-3.0",
+        "role": "module (Java)",
+        "novelty_score": 0.1685,
+        "relevance": 0.7649,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "maven central",
+          "getting started",
+          "asterisk",
+          "build",
+          "##",
+          "."
+        ],
+        "gem_score": 0.4052
+      },
+      {
+        "name": "marlowe-lang/marlowe-cardano",
+        "url": "https://github.com/marlowe-lang/marlowe-cardano",
+        "license": "Apache-2.0",
+        "role": "module (Haskell)",
+        "novelty_score": 0.1431,
+        "relevance": 0.7853,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          ".",
+          "build",
+          "marlowe",
+          "nix",
+          "docker",
+          "cabal",
+          "haskell packages"
+        ],
+        "gem_score": 0.3992
+      },
+      {
+        "name": "sous-chefs/ark",
+        "url": "https://github.com/sous-chefs/ark",
+        "license": "Apache-2.0",
+        "role": "module (Ruby)",
+        "novelty_score": 0.0669,
+        "relevance": 0.7763,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "path",
+          "default",
+          "ark",
+          "directory",
+          "file",
+          "- node",
+          "node ark"
+        ],
+        "gem_score": 0.3715
+      },
+      {
+        "name": "sdstoehr/har-reader",
+        "url": "https://github.com/sdstoehr/har-reader",
+        "license": "MIT",
+        "role": "module (Java)",
+        "novelty_score": 0.0637,
+        "relevance": 0.7689,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "har",
+          "-",
+          "har har",
+          "java",
+          "https",
+          "harreader harreader",
+          "harwriter harwriter",
+          "harreader"
+        ],
+        "gem_score": 0.3684
+      },
+      {
+        "name": "ing-bank/cassandra-jdbc-wrapper",
+        "url": "https://github.com/ing-bank/cassandra-jdbc-wrapper",
+        "license": "Apache-2.0",
+        "role": "module (Java)",
+        "novelty_score": 0.0633,
+        "relevance": 0.7578,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "jdbc",
+          "https",
+          "driver",
+          "cassandra",
+          "jdbc wrapper",
+          "apache cassandra",
+          ".",
+          "wrapper"
+        ],
+        "gem_score": 0.3663
+      },
+      {
+        "name": "ROBOTIS-GIT/hls_lfcd_lds_driver",
+        "url": "https://github.com/ROBOTIS-GIT/hls_lfcd_lds_driver",
+        "license": "BSD-3-Clause",
+        "role": "module (C++)",
+        "novelty_score": 0.0485,
+        "relevance": 0.7777,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "- robotis",
+          "robotis",
+          "robotis e-manual",
+          "turtlebot3",
+          "community",
+          "youtube"
+        ],
+        "gem_score": 0.3663
+      },
+      {
+        "name": "NathanVaughn/webtrees-docker",
+        "url": "https://github.com/NathanVaughn/webtrees-docker",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.0492,
+        "relevance": 0.7624,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "yes",
+          "no",
+          "database",
+          "mysql",
+          "webtrees",
+          "relative /var/www/webtrees/data/",
+          "mysql database"
+        ],
+        "gem_score": 0.3631
+      },
+      {
+        "name": "rust-cli/termtree",
+        "url": "https://github.com/rust-cli/termtree",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.0464,
+        "relevance": 0.7656,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "tree",
+          "target",
+          "-",
+          "##",
+          "termtree",
+          "example",
+          "program"
+        ],
+        "gem_score": 0.3625
+      },
+      {
+        "name": "everyside/swirldb",
+        "url": "https://github.com/everyside/swirldb",
+        "license": "Apache-2.0",
+        "role": "module (Rust)",
+        "novelty_score": 0.0435,
+        "relevance": 0.7689,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "###",
+          "server",
+          "build",
+          "//",
+          "##",
+          "browser",
+          "wasm"
+        ],
+        "gem_score": 0.3611
+      },
+      {
+        "name": "graphql-java-kickstart/graphql-spring-webclient",
+        "url": "https://github.com/graphql-java-kickstart/graphql-spring-webclient",
+        "license": "GPL-3.0",
+        "role": "module (Java)",
+        "novelty_score": 0.0512,
+        "relevance": 0.7512,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "_ only",
+          "only when",
+          "when retry.strategy",
+          "when",
+          "retry.strategy",
+          "_",
+          "_."
+        ],
+        "gem_score": 0.3597
+      },
+      {
+        "name": "rtoal/ple",
+        "url": "https://github.com/rtoal/ple",
+        "license": "MIT",
+        "role": "module (PowerShell)",
+        "novelty_score": 0.1175,
+        "relevance": 0.791,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "language",
+          "programming language",
+          "programming",
+          "language explorations",
+          "readme files",
+          "examples",
+          "languages"
+        ],
+        "gem_score": 0.3325
+      },
+      {
+        "name": "Netflix/dgs-examples-kotlin",
+        "url": "https://github.com/Netflix/dgs-examples-kotlin",
+        "license": "Apache-2.0",
+        "role": "module (Kotlin)",
+        "novelty_score": 0.058,
+        "relevance": 0.7667,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "example",
+          ".",
+          "show",
+          "dgs framework",
+          "application",
+          "reviews",
+          "subscription https"
+        ],
+        "gem_score": 0.3034
+      }
+    ],
+    "architecture_ascii": "[1] cloudflare/sliceslice-rs  →  [2] rust-mcp-stack/rust-mcp-filesystem  →  [3] pycontw/pycon.tw  →  [4] yearn/yearn-exporter  →  [5] dtormoen/tsk  →  [6] growupanand/ConvoForm  →  [7] ari4java/ari4java  →  [8] marlowe-lang/marlowe-cardano  →  [9] sous-chefs/ark  →  [10] sdstoehr/har-reader  →  [11] ing-bank/cassandra-jdbc-wrapper  →  [12] ROBOTIS-GIT/hls_lfcd_lds_driver  →  [13] NathanVaughn/webtrees-docker  →  [14] rust-cli/termtree  →  [15] everyside/swirldb  →  [16] graphql-java-kickstart/graphql-spring-webclient  →  [17] rtoal/ple  →  [18] Netflix/dgs-examples-kotlin\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "machine learning",
+        "docker",
+        "rust",
+        "java"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 32,
+      "probed": 20,
+      "selected": 18,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

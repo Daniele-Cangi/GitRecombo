@@ -4,8 +4,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 import requests
 from dateutil import parser as dtp
-from github_search_planner import SearchPlanner
-from repo_cache import RepoCache
+from .github_search_planner import SearchPlanner
+from .repo_cache import RepoCache
 
 GH_API = "https://api.github.com"
 GH_ACCEPT = "application/vnd.github+json"
@@ -19,13 +19,6 @@ _repo_cache: Optional[RepoCache] = None
 _last_code_search_time = 0.0
 _code_search_count = 0
 _code_search_window_start = 0.0
-
-PRESETS = {
-    "vector-rust": "pushed:>{date} language:Rust topic:vector",  # Use pushed: for activity-based search
-    "mamba": "pushed:>{date} language:Python topic:mamba",
-    "gpu-kernel": "pushed:>{date} language:C++ topic:cuda",
-    "streaming": "pushed:>{date} language:TypeScript topic:webtransport",
-}
 
 STOP = set("""a an and are as at be by for from has have in is it its of on or that the to with you your we i our this these those via into over under using use used new fast real
 il lo la gli le un una uno che di a da in con su per tra fra e o ma se non piu più come""".split())
@@ -103,8 +96,17 @@ def gh_get(url: str, token: str, params: Dict[str, Any] | None = None, retry: in
                 _last_code_search_time = time.time()
                 _code_search_count += 1
         
+        # Support both 'token' and 'Bearer' schemes depending on token type.
+        # Personal access tokens should be sent as 'token <PAT>' per GitHub docs.
+        auth_scheme = "Bearer"
+        try:
+            if isinstance(token, str) and (token.startswith("ghp_") or token.startswith("github_pat_") or token.startswith("gho_") or token.startswith("ghu_")):
+                auth_scheme = "token"
+        except Exception:
+            auth_scheme = "Bearer"
+
         headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"{auth_scheme} {token}",
             "Accept": GH_ACCEPT,
             "X-GitHub-Api-Version": GH_VERSION,
             "User-Agent": "gitrecombo-cli"
@@ -149,13 +151,6 @@ def search_repos(query: str, per_page: int, token: str) -> List[Dict[str, Any]]:
     data = gh_get(f"{GH_API}/search/repositories", token, {
         "q": query, "sort": "stars", "order": "desc", "per_page": per_page
     })
-    
-    # DEBUG: Check what API returns
-    total_count = data.get("total_count", 0)
-    items_count = len(data.get("items", []))
-    if total_count == 0 or items_count == 0:
-        print(f"[DEBUG] API response: total_count={total_count}, items={items_count}")
-        print(f"[DEBUG] Query was: {query[:100]}")
     
     out = []
     for it in data.get("items", [])[:per_page]:
@@ -265,7 +260,23 @@ def extract_concepts(text: str, topk: int = 8) -> List[str]:
         if p not in out: out.append(p[:40])
     return out
 
-def build_queries(topics: List[str], days: int, explore_longtail: bool, max_stars: Optional[int]) -> List[str]:
+def build_queries(topics: List[str], days: int, explore_longtail: bool, max_stars: Optional[int], custom_queries: List[str] | None = None) -> List[str]:
+    """Build GitHub search queries from topics or use custom_queries directly.
+    
+    Args:
+        topics: List of topic names (can include preset names like "vector-rust")
+        days: Days back for activity filter
+        explore_longtail: Whether to add long-tail filters
+        max_stars: Max stars ceiling for long-tail
+        custom_queries: Optional list of pre-built GitHub API queries to use as-is
+    
+    Returns:
+        List of GitHub search queries
+    """
+    # If custom_queries provided, use those directly (they override topics)
+    if custom_queries:
+        return custom_queries
+    
     date_cut = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
     queries = []
     for t in topics:
@@ -273,22 +284,21 @@ def build_queries(topics: List[str], days: int, explore_longtail: bool, max_star
         if not t:
             continue
 
-        if t in PRESETS:
-            # Use preset (already has pushed:>{date})
-            base_core = PRESETS[t].format(date=date_cut).strip()
-        else:
-            # Use pushed: for activity-based search (more results than created:)
-            # Wrap multi-word topics in quotes for phrase search
-            topic_term = f'"{t}"' if ' ' in t else t
-            base_core = f"pushed:>{date_cut} {topic_term} in:name,description,readme".strip()
+        # Generate query from topic (no PRESETS - all config-driven now)
+        # Wrap multi-word topics in quotes for phrase search
+        topic_term = f'"{t}"' if ' ' in t else t
+        base_core = f"pushed:>{date_cut} {topic_term} in:name,description,readme".strip()
 
         if explore_longtail:
             # Long-tail: only ceiling + quality signals (no floor to avoid contradiction)
             cap = max_stars if max_stars is not None else 20
             q = f"{base_core} stars:<{cap} forks:<2 fork:false archived:false has:license"
         else:
-            # Standard: NO stars floor - let scoring do the filtering
-            q = f"{base_core} has:license"
+            # Standard: respect max_stars ceiling if provided
+            if max_stars is not None:
+                q = f"{base_core} stars:<{max_stars} has:license"
+            else:
+                q = f"{base_core} has:license"
 
         queries.append(q)
     return queries
@@ -312,7 +322,8 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     require_tests = bool(params.get("require_tests", False))
     authorsig = bool(params.get("authorsig", False))
     embed_provider = params.get("embed_provider")  # None/openai/sbert
-    embed_model = params.get("embed_model", "text-embedding-3-small")
+    # Force default to the single approved SBERT model to keep front-end consistent
+    embed_model = params.get("embed_model", "thenlper/gte-small")
     embed_max_chars = int(params.get("embed_max_chars", 8000))
     goal = params.get("goal")
     weights = {
@@ -323,13 +334,9 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
         "diversity": float(params.get("w_diversity", 0.10)),
     }
 
-    queries = build_queries(topics, days, explore_longtail, max_stars)
-    
-    # DEBUG: Print generated queries
-    print(f"\n[DEBUG] Generated {len(queries)} queries:")
-    for i, q in enumerate(queries, 1):
-        print(f"  {i}. {q}")
-    print()
+    # Support custom_queries from config (overrides topics if provided)
+    custom_queries = params.get("custom_queries")  # List of pre-built GitHub queries
+    queries = build_queries(topics, days, explore_longtail, max_stars, custom_queries)
 
     # 1) Aggregate by novelty + license
     agg: Dict[str, Dict[str, Any]] = {}
@@ -339,25 +346,38 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     # Control whether to READ from cache (if False, force fresh GitHub fetches for readmes/metadata)
     use_cache_reads = bool(params.get("use_cache", False))
 
-    for q in queries:
+    for idx, q in enumerate(queries, 1):
+        print(f"\n[QUERY {idx}/{len(queries)}] {q}")
         repos = search_repos(q, max_per_q, token)
-        print(f"[DEBUG] Query returned {len(repos)} repos: {q[:60]}...")
+        print(f"[FOUND] {len(repos)} repositories from GitHub API")
+        
+        skipped_processed = 0
+        skipped_license = 0
+        added = 0
+        
         for r in repos:
             # Skip repos that were already processed in previous runs when requested
             if exclude_processed and cache and cache.is_processed(r.get("full_name")):
                 print(f"[SKIP] Already processed: {r.get('full_name')}")
+                skipped_processed += 1
                 continue
             key = r["full_name"]
             r["novelty_score"] = novelty_score(r)
             lic = (r.get("license") or "").strip() if r.get("license") else ""
             if licenses and (not lic or lic not in licenses):
+                skipped_license += 1
                 continue
             if key not in agg or r["novelty_score"] > agg[key]["novelty_score"]:
                 agg[key] = r
+                added += 1
+        
+        print(f"[STATS] Added: {added} | Skipped (processed): {skipped_processed} | Skipped (license): {skipped_license}")
 
+    print(f"\n[CANDIDATES] Total unique repositories after filtering: {len(agg)}")
     candidates = sorted(agg.values(), key=lambda x: x["novelty_score"], reverse=True)
     probe_limit = int(params.get("probe_limit", 24))
     probe = candidates[:min(probe_limit, len(candidates))]
+    print(f"[PROBE] Analyzing top {len(probe)} repositories (probe_limit={probe_limit})")
 
     # 2) Deep probes: topics, readme, health, author rep, concepts
     print(f"\n🔍 Analyzing {len(probe)} repositories...")
@@ -390,12 +410,12 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
     vecs: Dict[str, List[float]] = {}
     goal_vec = None
     if embed_provider and texts:
-        from embeddings import SBertEmbedder
+        from .embeddings import SBertEmbedder
         emb = SBertEmbedder(embed_model)
         enc = emb.embed(texts)
         vecs = {k:v for k,v in zip(keys, enc)}
     if goal and embed_provider:
-        from embeddings import SBertEmbedder
+        from .embeddings import SBertEmbedder
         goal_vec = SBertEmbedder(embed_model).embed([goal])[0]
 
     def cosine(a, b):
@@ -423,7 +443,7 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
                 weights["author"]  *it.get("author_rep",0.0)  +
                 weights["diversity"]*diversity_bonus)
 
-    while len(selected) < 6 and pool:
+    while len(selected) < max_per_q and pool:
         best, best_s = None, -1
         for cand in pool:
             div = 0.0
@@ -444,10 +464,11 @@ def discover(params: Dict[str, Any]) -> Dict[str, Any]:
         if best["full_name"] in vecs:
             selected_vecs.append(vecs[best["full_name"]])
         pool.remove(best)
-        if len(selected) >= 6: break
+        if len(selected) >= max_per_q: break
 
-    if len(selected) < 3:
-        selected = sorted([c for c in candidates if c in probe], key=lambda x: x["novelty_score"], reverse=True)[:3]
+    if len(selected) < min(3, max_per_q):
+        fallback_count = min(3, max_per_q)
+        selected = sorted([c for c in candidates if c in probe], key=lambda x: x["novelty_score"], reverse=True)[:fallback_count]
 
     sources = [{
         "name": s["full_name"],

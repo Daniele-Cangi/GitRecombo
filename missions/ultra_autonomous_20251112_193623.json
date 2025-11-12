@@ -1,0 +1,996 @@
+{
+  "timestamp": "2025-11-12T19:36:23.401378",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "Build a discovery-grade, container-native ML fabric that turns complex imaging workloads into reproducible, auditable, and scalable experiments—driven by Rust microservices, delivered via Docker/Nomad locally and etcd/Kubernetes in the cloud, surfaced through a simple HTML-first interface. Concretely: orchestrate ScrollPrize/villa CT-volume pipelines and gallantlab/himalaya baselines; enforce Python quality with pyta; guarantee image-level reproducibility with anchore/stereoscope; cache and coordinate via rustis/Redis; expose a lightweight Go API (tibiadata-api-go) and an HTML static site (cfw-guide/dsi.cfw.guide); optionally offload hard combinatorial search to Qiskit/qiskit-serverless. Success = reproducible runs (bit-for-bit container diff), 20% time-to-first-result improvement from Rust caching, and automated end-to-end verification through Ginger-Automation on Docker/Nomad. Why it matters: it compresses the messy edge between ML research and production into a clean, inspectable, polyglot system that teams actually trust.",
+  "repository_synergy": "The insight: treat ML discovery as a supply chain. We don’t just run code; we ingest, verify, schedule, execute, audit, publish, and socialize results—each phase driven by a best-of-breed repo that wasn’t originally built to fit together, but clicks when you see them as gears in one machine.\n\nWhy these repos: ScrollPrize/villa isn’t just about ancient scrolls; it’s a canonical, heavy imaging workload with tricky data handling and 3D preprocessing. gallantlab/himalaya gives linear-model rigor and fast baselines—perfect to sanity-check fancy pipelines. anchore/stereoscope is an unsung hero: it diffs container layers and images so your “reproducible science” claim can be verified, not believed. Qiskit/qiskit-serverless brings a quantum-sidecar for small but nasty optimization subproblems, without forcing you into a quantum stack—use it when it pays off. pyta-uoft/pyta injects a high bar of Python code correctness in a research world that often lets it slide.\n\nThe bridge: orchestrate everything with containers and neutral schedulers. multani/docker-nomad lets you spin a real scheduler locally inside Docker—pragmatic when you want quick multi-node behavior without a full cluster. As you scale, etcd-io/etcd-operator gives you a K8s-native HA backing store—promotion from scrappy dev to durable prod. dahomey-technologies/rustis provides a fast Redis client for Rust services that manage job metadata and caching; krojew/springtime’s DI keeps those services clean and testable. believer-oss/ethos acts as the developer CLI shell—read experiment manifests, run commands, and make the orchestration approachable. avalonmediasystem/avalon quietly solves a hard problem: store and serve large media artifacts (e.g., CT volumes, derived assets) with robust metadata and an existing Docker story. tibiadata/tibiadata-api-go is a ready-made Go API skeleton to expose results and job states without ceremony.\n\nThe layer above: cfw-guide/dsi.cfw.guide gives us a simple, fast static-site build pipeline to publish browsable HTML results that anyone can view, no framework bloat required. EuanRiggans/BulkURLOpener does something deceptively powerful: rapid batch-action on artifacts—open N tiles, evaluate consistency, triage anomalies. utarwyn/discord-tictactoe provides a working Discord bot scaffold; repurpose it to let curators or lab members trigger runs from a familiar channel. Ginger-Automation/Ginger drives integrated E2E verification across UI (Avalon), APIs (Go), and bot triggers.\n\nThe innovation: combining image-layer SBOM-style verification (stereoscope) with ML workflows means scientific computing gets a supply-chain-grade audit trail. Nomad-in-Docker gives instant local clusters; etcd-operator transitions you to K8s gracefully. Rust enforces low-latency caching and scheduling glue; Go ships the public API; Python remains the ML workhorse but obeys quality gates. With Qiskit serverless, you selectively quantum-accelerate the parts (e.g., parameter search or unwrapping path heuristics) that justify it. The outcome is a portable, trustworthy discovery engine—not just a pipeline, but a product.",
+  "technical_architecture": "Core flow\n- Ingest and catalog\n  - Avalon (Docker compose) stores raw CT volumes and derived media; use its API to ingest datasets and preserve metadata (dataset IDs, provenance tags, checksums).\n  - A Rust Ingestor service (springtime DI) watches an “incoming” bucket and registers assets in Avalon. It uses rustis to cache dataset manifests in Redis for fast access.\n\n- Experiment definition and CLI\n  - believer-oss/ethos as a thin Rust CLI wrapper: ethos discover run –exp path/to/manifest.yaml. The CLI reads a manifest (dataset refs, container images, parameters), validates, and posts jobs to the scheduler.\n  - pyta-uoft/pyta runs preflight lint/type checks on Python pipelines (villa, himalaya) to fail-fast bad experiments.\n\n- Scheduling and execution\n  - Local dev: multani/docker-nomad launches a Nomad agent inside Docker. The ethos CLI posts HCL job specs to Nomad’s REST API. Jobs are containers for villa (CT unwrapping/segmentation) and himalaya (baseline regression), each with pinned tags.\n  - Cluster prod: jobs are mirrored to Kubernetes. The etcd-io/etcd-operator backs high-availability configuration/state where needed. Same images, same manifests.\n\n- Reproducibility and supply-chain validation\n  - anchore/stereoscope runs in CI and pre-execution hooks to diff the target container image against a previous baseline. If the declared digest differs or a layer introduces unpinned dependencies, the job is blocked.\n  - Result bundles (params, git SHAs, image digests, stereoscope diff reports) are written to Avalon as audit artifacts.\n\n- Optional quantum sidecar\n  - Qiskit/qiskit-serverless is called by a lightweight Python service to optimize discrete choices (e.g., seed selection, sparse mask thresholds, path heuristics) where combinatorial explosion hurts. The service returns a parameter set and confidence scores; villa runs with those params or falls back to classical search.\n\n- High-performance preprocessing extension (optional)\n  - wheelos/apollo-lite’s minimal C++ scaffolding is adapted to build a fast volume resampler/compressor plugin. The Rust Orchestrator exposes it via FFI to preprocess slices before villa, controlled by CLI flags. Use it only where I/O is the bottleneck.\n\n- Caching and coordination\n  - Redis holds job state, partial results, and memoized intermediate tensors. Keys follow e.g., discover:{dataset}:{stage}:{hash}. The rustis-based Rust Orchestrator tracks cache hits and short-circuits downstream steps when inputs match.\n\n- Results API and HTML publishing\n  - tibiadata-api-go provides a small Go web service to expose REST endpoints:\n    - GET /datasets\n    - GET /experiments?dataset={id}\n    - GET /artifacts/{experiment_id}\n    - GET /audit/{experiment_id}/diff\n  - cfw-guide/dsi.cfw.guide build scripts generate a static HTML site from experiment manifests and API data snapshots. Pages include per-experiment dashboards, links to Avalon assets, and stereoscope reports. EuanRiggans/BulkURLOpener is embedded as a utility page to batch-open slices/tiles for triage.\n\n- Collaboration and automation\n  - utarwyn/discord-tictactoe becomes a lab bot. Commands: !discover run {manifest}, !discover status {id}, !discover artifacts {id}. Bot calls the Rust Orchestrator HTTP endpoints.\n  - Ginger-Automation/Ginger runs nightly end-to-end flows: add dataset to Avalon, run an experiment on Nomad, verify the Go API returns results, generate static HTML, and post a success link to Discord.\n\nAPIs and interfaces\n- Rust Orchestrator HTTP endpoints (internal):\n  - POST /orchestrate/run with manifest payload; returns job_id.\n  - GET /orchestrate/status/{job_id} reads Redis and/or Nomad status.\n  - POST /orchestrate/publish/{job_id} writes results to Avalon and triggers site rebuild.\n- Scheduler interfaces:\n  - Nomad REST for local dev; K8s Jobs/CRDs for prod. The same container specifications are used.\n\nPerformance and optimizations\n- Use the C++ preprocessing plugin only when profiling shows I/O-bound slicing. Memory-map volumetric chunks, SIMD-accelerated resampling, and tile-level caching.\n- Redis-backed memoization prevents re-running expensive steps when image digest+params hash is unchanged.\n- Batching: villa jobs are chunked by volume regions; Nomad spreads chunks across agents. Himalaya baselines run on subsets in parallel for quick sanity signals.\n- Data export: pre-compress slices with a fast, reproducible codec; we keep the codec pinned and validated via stereoscope.\n\nSecurity and provenance\n- Every experiment stores: git SHAs, container digests, stereoscope diffs, parameter manifests, input checksums. This bundle is immutable and timestamped in Avalon.\n- pyta stops Python code-quality regressions that jeopardize correctness.\n\nNo surprises, no magic: different languages for different strengths—Rust for low-latency orchestration and safety; Python for ML; Go for a simple public API; Ruby (Avalon) as an off-the-shelf media catalog; C++ as a tactical accelerator; HTML/JS for universal viewing.",
+  "expected_impact": "Use cases\n- Imaging heritage labs: Process a new CT volume of a charred manuscript via villa, cache precomputed tiles, and publish a verifiable report page. The curator clicks a single HTML link, opens a BulkURLOpener batch of suspect tiles, and annotates what they see.\n- Hospital research sandboxes: Run reproducible segmentation baselines with himalaya on anonymized CT slices, compare container digests and parameter sweeps across weeks, and export immutable audit bundles for IRB review.\n- Classroom “quantum meets imaging” module: Students run a small villa subset locally with Nomad-in-Docker; flip a flag to use Qiskit serverless for a discrete parameter search; compare convergence and cost.\n- Competition-grade CI: When a new PR changes a Dockerfile, stereoscope detects drift and blocks runs without pinned bases. Ginger automates E2E to ensure the Go API, static site, and bot still work.\n- Field deployments: A laptop cluster with Docker+Nomad processes batches offline, syncs artifacts to Avalon later, and regenerates HTML reports without internet.\n- Multi-tenant research hub: Teams submit manifests via the CLI; the Rust Orchestrator enforces quotas via Redis counters; API exposes fair-use metrics; site rebuilds only changed experiment pages.\n- Forensics data rooms: BulkURL pages auto-open the exact subset of slices implicated by a hypothesis; Discord bot posts a read-only artifact kit that includes stereoscope diffs and checksums.\n\nScalability/extensibility\n- Scale-out by adding Nomad agents or moving to K8s with etcd-operator; the same manifests and images work unchanged.\n- Add new workloads by defining a new container and a manifest schema. The Rust Orchestrator doesn’t care—if it’s a container with declared inputs/outputs, it runs.\n\nLimitations and mitigations\n- Quantum costs/latency: Qiskit serverless is optional; use a budget guard and a classical fallback.\n- Avalon footprint: Running a media system adds overhead; keep a minimal profile or swap to object storage with Avalon as metadata-only if needed.\n- Mixed-language complexity: Tame it with small, purpose-built components and Ginger E2E tests. The DI in Rust (springtime) keeps services maintainable.\n- Redis dependency: Treat it as ephemeral cache; critical provenance is stored in Avalon and immutable bundles.",
+  "innovation_analysis": "Innovation score: 8.5/10. The novelty isn’t a new model—it’s the supply-chain-grade rigor applied to ML discovery. Stereoscope-driven reproducibility, Nomad-in-Docker to K8s via etcd-operator, and a Rust cache/orchestrator with optional quantum sidecar is a fresh, pragmatic combo.\n\nNext steps\n- Week 1: Stand up Avalon via docker-compose; run Nomad-in-Docker; seed Redis; compile the Rust Orchestrator (springtime + rustis); bootstrap Go API from tibiadata; enable stereoscope in CI.\n- Week 2: Package villa and himalaya containers; wire pyta preflight; publish first HTML site via cfw-guide scripts; add BulkURLOpener page.\n- Week 3: Add Discord bot triggers; integrate Ginger for nightly E2E; test C++ preprocessing plugin path; pilot Qiskit serverless sidecar on a small search.\n\nKey metrics\n- Reproducibility: percent of runs with identical outputs given same digests/params.\n- Time-to-first-result: wall-clock from ingest to first artifact page.\n- Cache effectiveness: cache hit rate and saved compute minutes.\n- Audit completeness: fraction of experiments with a full provenance bundle and stereoscope diff.\n\nEssential tools\n- Docker/Nomad, Kubernetes with etcd-operator (prod), Redis, Rust (springtime, rustis), Python (villa, himalaya, pyta), Go (tibiadata-api-go), stereoscope, Avalon, cfw-guide static site tooling, Discord bot scaffold, Ginger for E2E.",
+  "sources": [
+    {
+      "name": "Qiskit/qiskit-serverless",
+      "url": "https://github.com/Qiskit/qiskit-serverless",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "[![Stability](https://img.shields.io/badge/stability-alpha-f4d03f.svg)](https://github.com/Qiskit/qiskit-serverless/releases)\n[![License](https://img.shields.io/github/license/qiskit-community/quantum-prototype-template?label=License)](https://github.com/qiskit-community/quantum-prototype-template/blob/main/LICENSE.txt)\n[![Code style: Black](https://img.shields.io/badge/Code%20style-Black-000.svg)](https://github.com/psf/black)\n[![Python](https://img.shields.io/badge/Python-3.11-informational)](https://www.python.org/)\n[![Qiskit](https://img.shields.io/badge/Qiskit-%E2%89%A5%201.0.0-6133BD)](https://github.com/Qiskit/qiskit)\n\n# Qiskit Serverless\n\nQiskit Serverless is a user-friendly tool that enables you to easily run complex quantum computing tasks.\nWith this software, you can execute Qiskit Functions as long running jobs and distribute them across multiple CPUs, GPUs, and QPUs.\nThis means you can take on more complex quantum-classical programs and run them with ease.\nYou don't have to worry about configuration or scaling up computational resources, as Qiskit Serverless takes care of everything for you.\n\n![diagram](./docs/images/qs_diagram.png)\n\n### Table of Contents\n\n1. [Quickstart](#quickstart)\n   1. [Using Docker](#docker)\n   1. [Using Kubernetes](#kubernetes)\n1. Modules\n   1. [Client](./client)\n   1. [Gateway](./gateway)\n   1. [Charts](./charts)\n1. [How to Give Feedback](#how-to-give-feedback)\n1. [Contribution Guidelines](#contribution-guidelines)\n1. [Deprecation Policy](#deprecation-policy)\n1. [References and Acknowledgements](#references-and-acknowledgements)\n1. [License](#license)\n\n----------------------------------------------------------------------------------------------------\n\n### Quickstart\nThis Quickstart section guides users to easily deploy Qiskit Serverless infrastructure and run a simple example.\n\n#### Docker\nFor user convenience, this section assumes that users will deploy the infrastructure in a local environment using Docker following the next ",
+      "scores": {
+        "novelty": 0.3983,
+        "health": 1.0,
+        "relevance": 0.7716,
+        "author_rep": 0.0,
+        "gem_score": 0.7323
+      },
+      "concepts": [
+        "1.",
+        "https",
+        "qiskit",
+        "qiskit serverless",
+        "docker",
+        "serverless",
+        "infrastructure",
+        "shell"
+      ]
+    },
+    {
+      "name": "pyta-uoft/pyta",
+      "url": "https://github.com/pyta-uoft/pyta",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# PyTA\n\nPyTA is a Python program which uses static code analysis to help students find\nand fix common coding errors in introductory Python courses. Python already\nhas great static analysis tools like pep8 and pylint, but these tools do not\nnecessarily have the most beginner-friendly format. PyTA has two central goals:\n\n1. Statically identify common coding errors by using existing linting tools and\n   building custom linters (e.g., as pylint checkers).\n2. Present beautiful, intuitive messages to students that are both helpful for\n   fixing errors, and good preparation for the terser messages they will see\n   in their careers.\n\nThis is a new project started in the Summer of 2016, and takes the form\nof a wrapper around [pylint](https://pylint.org) (with custom checkers) that operates\ndirectly on Python modules, as well as a website with some supplementary\nmaterial going into further detail for the emitted errors.\n\nFor greater details on the errors PyTA checks for: [Help Documentation](https://www.cs.toronto.edu/~david/pyta/).\n\nFor help getting started using PyTA: [Quick Start](https://www.cs.toronto.edu/~david/pyta/usage/quick_start.html).\n\n## Installation\n\nIf you're interested in using PyTA, you can install it using `pip` (or `pip3`, on OSX/Linux):\n\n```console\n> pip install python-ta\n```\n\n### Development\n\nIf you're developing PyTA:\n\n1. First, clone this repository.\n2. Open a terminal in this repo, and run `pip install -e \".[dev, cfg, z3]\"` to install the dependencies.\n3. Then run `pre-commit install` to install the pre-commit hooks (for automatically formatting and checking your code on each commit).\n\nWhile not strictly necessary for debugging, some debugging tools require [graphviz](https://www.graphviz.org/download/) to be installed on your system.\n\n### Tests\n\nTo run the test suite, run the following command from inside the `pyta` directory:\n\n```console\n> python -m pytest tests  # Or python3 on OSX/Linux\n```\n\n## Generating the docs\n\nThe PyTA documentation is generat",
+      "scores": {
+        "novelty": 0.387,
+        "health": 1.0,
+        "relevance": 0.7631,
+        "author_rep": 0.0,
+        "gem_score": 0.6048
+      },
+      "concepts": [
+        "pyta",
+        "python",
+        ".",
+        "install",
+        "run",
+        "https",
+        "errors",
+        "tools"
+      ]
+    },
+    {
+      "name": "ScrollPrize/villa",
+      "url": "https://github.com/ScrollPrize/villa",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# 🏛️ villa\n\n[![MIT licensed][licence-badge]][licence-url]\n[![Stars][stars-badge]][stars-url]\n[![Discord chat][discord-badge]][discord-url]\n\nVesuvius Challenge is a machine learning and computer vision competition to read the Herculaneum scrolls.  \nThis repository contains the source code for Vesuvius Challenge: scroll tools, libraries, our website, data processing scripts, and [more](https://github.com/ScrollPrize/villa/blob/main/scrollprize.org/docs/20_community_projects.md).\n\n---\n\n## Libraries for Accessing Scrolls\n\n### [vesuvius](vesuvius/)\nA Python library for accessing CT scans of ancient scrolls.\n\n### [vesuvius-c](vesuvius-c/)\nA single-header C library for accessing CT scans of ancient scrolls.\n\n---\n\n## Dataset & Rendering Tools\n\n### [foundation](foundation/)\nTools to build/manage scroll datasets and cloud infrastructure.\n\n### [scroll-renderer](scroll-renderer/)\nTools for flattening and rendering 3D mesh segments.\n\n### [crackle-viewer](crackle-viewer)\nA GUI tool to inspect and label ink on virtually unwrapped segments of ancient scrolls.  \nOriginally developed by [Julian Schilliger](https://github.com/schillij95).\n\n### [ink-detection](ink-detection/)\nThe ink detection machine learning model used to win the Vesuvius Challenge 2023 Grand Prize.  \nOriginally developed by [Youssef Nader](https://github.com/younader) and [Luke Farritor](https://github.com/lukeboi).\n\n---\n\n## Automatic Unwrapping (Segmentation) Pipelines\n\n### [VC3D (surface tracer)](volume-cartographer)\nA semi-automatic segmentation pipeline to extract papyrus sheets from CT scans of ancient scrolls.\nAs of September 2025, it is the approach used by the Vesuvius Challenge team.\nDeveloped by [Hendrik Schilling](https://github.com/hendrikschilling) and [Sean Johnson](https://github.com/bruniss) as a fork of [Volume Cartographer](https://github.com/educelab/volume-cartographer).\n\n### [spiral fitting](https://github.com/pmh47/spiral-fitting)\nA fully automatic unwrapping pipeline that fits a spiral to the ",
+      "scores": {
+        "novelty": 0.4252,
+        "health": 0.75,
+        "relevance": 0.7918,
+        "author_rep": 0.0,
+        "gem_score": 0.5667
+      },
+      "concepts": [
+        "https",
+        "###",
+        "vesuvius challenge",
+        "ancient scrolls.",
+        ".",
+        "--- ##",
+        "ct scans",
+        "scans ancient"
+      ]
+    },
+    {
+      "name": "avalonmediasystem/avalon",
+      "url": "https://github.com/avalonmediasystem/avalon",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# Avalon Media System\n[![Build Status](https://travis-ci.org/avalonmediasystem/avalon.svg?branch=develop)](https://travis-ci.org/avalonmediasystem/avalon)\n[![Coverage Status](https://coveralls.io/repos/avalonmediasystem/avalon/badge.svg?branch=master&service=github)](https://coveralls.io/github/avalonmediasystem/avalon?branch=master)\n\n[Avalon Media System](http://www.avalonmediasystem.org) is an open source system for managing large collections of digital audio and video. \nThe project is led by [Indiana University Libraries](https://libraries.indiana.edu/library-technologies).\n\nFor more information and regular project updates visit the [Avalon website](http://www.avalonmediasystem.org) and [documentation wiki](https://samvera.atlassian.net/wiki/spaces/AVALON/overview).\n\n# Installing Avalon Media System\nInstallation instructions are available on Avalon's documentation site:\n - https://samvera.atlassian.net/wiki/spaces/AVALON/pages/1957954771/Manual+Installation+Instructions\n\n# Development\n\n## Quickstart development with Docker\nUsing Docker is the recommended method of setting up an Avalon Media System Development Environment. It can be completed in minutes without installing any dependencies beside Docker itself. It should be noted that the docker-compose.yml provided here is for development only and will be updated continually.\n* Install [Docker](https://docs.docker.com/engine/installation/) and [docker-compose](https://docs.docker.com/compose/install/)\n* ```git clone https://github.com/avalonmediasystem/avalon```\n* ```cd avalon```\n* ```cp config/controlled_vocabulary.yml.example config/controlled_vocabulary.yml```\n* ```docker-compose pull```\n* `docker-compose run createbuckets`\n* ```docker-compose up avalon worker```\n* Try loading Avalon in your browser: ```localhost:3000```\n\nAvalon is served by Webrick in development mode so any changes will be picked up automatically.\n\nRails debugging with Pry can be accessed by attaching to the docker container: ```docker attach",
+      "scores": {
+        "novelty": 0.4131,
+        "health": 0.75,
+        "relevance": 0.7864,
+        "author_rep": 0.0,
+        "gem_score": 0.5617
+      },
+      "concepts": [
+        "avalon",
+        "https",
+        "docker",
+        "up",
+        "docker-compose",
+        "run",
+        "exec",
+        "avalon media"
+      ]
+    },
+    {
+      "name": "believer-oss/ethos",
+      "url": "https://github.com/believer-oss/ethos",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align='center'>\n\n# Ethos\n\n**A collection of game development tools for working with Git**\n\n[![Discord](https://img.shields.io/discord/1194345901687316520?logo=discord&logoColor=white&color=%235865F2)](https://discord.gg/pzEgMhynzP)\n[![Build status](https://github.com/believer-oss/ethos/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/believer-oss/ethos/actions/workflows/rust.yml)\n</div>\n\n### The stack\n\nThe tools here are desktop applications that share a tech stack:\n- [Tauri](https://tauri.app/) as an application framework (Rust)\n- [Svelte](https://svelte.dev/) + [SvelteKit](https://kit.svelte.dev/) for UI (Typescript)\n- [Flowbite Svelte](https://flowbite-svelte.com/) for UI components (Typescript)\n\nThere's also an `ethos-core` crate which holds code that's shared between tools.\n\n## What's in this repo?\n\nEach tool has its own documentation, but here's a brief overview of each of them:\n\n### Friendshipper\n\nFriendshipper is a desktop application for viewing and downloading builds of an Unreal project. It can be used in one of two modes:\n\n- **Playtest mode** - This mode is for everyone. Launch and connect to game servers at any version of your project, and Friendshipper will download the right client. Schedule, view, and join playtests in groups.\n- **Contributor mode** - This mode is for engineers and content creators who work in the Unreal project's Git repo. This mode enables them to sync changes, submit changes, and view file locks in Git LFS.\n\nAll of our playtesting at Believer is done through Friendshipper. See full docs [here](./friendshipper/README.md).\n\n### Birdie\n\nBirdie is an application for art teams to manage their assets through Git LFS. At current state, it functions like a simple file browser, allowing users to browse, download, check out, and submit files via Git. Birdie utilizes specific Git configuration parameters to ensure that users can download and work on exactly the files they need without requiring them to sync all asse",
+      "scores": {
+        "novelty": 0.3859,
+        "health": 0.75,
+        "relevance": 0.779,
+        "author_rep": 0.0,
+        "gem_score": 0.5469
+      },
+      "concepts": [
+        "https",
+        "-",
+        "s",
+        "birdie",
+        "git",
+        "mode",
+        "here",
+        "files"
+      ]
+    },
+    {
+      "name": "Ginger-Automation/Ginger",
+      "url": "https://github.com/Ginger-Automation/Ginger",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "\n\n#  <img src=\"https://github.com/Ginger-Automation/Ginger/blob/master/GingerLogo.png\" width=\"64\"> Ginger Automation \n[![Build status](https://ci.appveyor.com/api/projects/status/1wcp41xf6q49988m/branch/master?svg=true)](https://ci.appveyor.com/project/ginger/ginger/branch/master)\n[![Gitter chat](https://badges.gitter.im/gitterHQ/gitter.png)](https://gitter.im/Ginger-Automation/)\n[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n\nLinux: [![Build Status](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_apis/build/status/Ginger%20Linux%20Build?branchName=master)](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_build/latest?definitionId=7?branchName=master) Windows: [![Build Status](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_apis/build/status/Ginger%20Windows%20Build?branchName=master)](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_build/latest?definitionId=6?branchName=master) Mac: [![Build Status](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_apis/build/status/Ginger%20Mac%20Build?branchName=master)](https://dev.azure.com/GingerByAmdocs/GingerByAmdocs/_build/latest?definitionId=11&branchName=master)\n\nGinger is an Automation IDE, Drag & Drop automation, Can be used by users with or without coding skills, open platform with plugin capabilities.\n\n\n- ### [Ginger Website](https://ginger.amdocs.com/)\n- ### [Download Ginger](https://ginger.amdocs.com/#downloads)\n- ### [Container Images](https://github.com/Ginger-Automation/GingerContainers)\n- ### [Ginger YouTube Channel](http://www.youtube.com/channel/UCQ2TRVoBhYi6zSU9r395EtQ/videos)\n- ### [Online Help](https://ginger-automation.github.io/Ginger-Web-Help)\n\n# Highlights\n- **Record & Playback** - Record user operation on target application and playback \n- Window Explorer\n- BDD (Behavior Driven Development) – Integrated Gherkin editor powered by intelli-sense text prediction, automatic generation of scenarios from feature files\n",
+      "scores": {
+        "novelty": 0.3594,
+        "health": 0.75,
+        "relevance": 0.7717,
+        "author_rep": 0.0,
+        "gem_score": 0.5357
+      },
+      "concepts": [
+        "-",
+        "ginger",
+        "#",
+        "https",
+        "###",
+        "automation",
+        "can",
+        "### ginger"
+      ]
+    },
+    {
+      "name": "tibiadata/tibiadata-api-go",
+      "url": "https://github.com/tibiadata/tibiadata-api-go",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# TibiaData API in Golang\n\n[![GitHub CI](https://img.shields.io/github/actions/workflow/status/tibiadata/tibiadata-api-go/build.yml?branch=main&logo=github)](https://github.com/tibiadata/tibiadata-api-go/actions/workflows/build.yml)\n[![Codecov](https://codecov.io/gh/TibiaData/tibiadata-api-go/branch/main/graph/badge.svg?token=PSBNLBI10C)](https://codecov.io/gh/TibiaData/tibiadata-api-go)\n[![GitHub go.mod version](https://img.shields.io/github/go-mod/go-version/tibiadata/tibiadata-api-go?logo=go)](https://github.com/tibiadata/tibiadata-api-go/blob/main/go.mod)\n[![GitHub release](https://img.shields.io/github/v/release/tibiadata/tibiadata-api-go?sort=semver&logo=github)](https://github.com/tibiadata/tibiadata-api-go/releases)\n[![Docker image size (tag)](https://img.shields.io/docker/image-size/tibiadata/tibiadata-api-go/latest?logo=docker)](https://hub.docker.com/r/tibiadata/tibiadata-api-go)\n[![GitHub license](https://img.shields.io/github/license/tibiadata/tibiadata-api-go)](https://github.com/tibiadata/tibiadata-api-go/blob/main/LICENSE)\n\nTibiaData API written in Golang and deployed in container (version v3 and above).\n\nDocumentation of API endpoints can be found on [docs.tibiadata.com](https://docs.tibiadata.com).\n\n### Table of Contents\n\n- [API versions](#api-versions)\n- [How to use](#how-to-use)\n  - [Helm](#helm)\n  - [Docker](#docker)\n  - [Docker-compose](#docker-compose)\n  - [Local development](#local-development)\n  - [Environment variables](#environment-variables)\n  - [Deployment note](#deployment-note)\n- [API documentation](#api-documentation)\n  - [Available endpoints](#available-endpoints)\n  - [Deprecated endpoints](#deprecated-endpoints)\n  - [Restricted endpoints](#restricted-endpoints)\n- [General information](#general-information)\n- [Credits](#credits)\n\n## API versions\n\nHere is a summary of the TibiaData API versions\n\n> **v4** is released _(since 1st December 2024 )_\\\n> **v3** is deprecated _(since 31rd January 2024)_\\\n> **v2** is deprecated _(since 30rd Ap",
+      "scores": {
+        "novelty": 0.3005,
+        "health": 0.75,
+        "relevance": 0.754,
+        "author_rep": 0.0,
+        "gem_score": 0.5097
+      },
+      "concepts": [
+        "-",
+        "- get",
+        "https",
+        "get",
+        "api",
+        "docker",
+        "tibiadata",
+        "endpoints"
+      ]
+    },
+    {
+      "name": "EuanRiggans/BulkURLOpener",
+      "url": "https://github.com/EuanRiggans/BulkURLOpener",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n    <img src=\"https://static.euanriggans.com/file/static-euanriggans-com/apps/bulkurlopener/images/440x280.png\">\n</p>\n\n## Install / Download Links\n\n| Package | Status | Version | URL |\n| ---------- | ---------- | ---------- | ---------- |\n| Chrome / Chromium | Official Version | 1.11.2 | [Chrome Webstore](https://chrome.google.com/webstore/detail/bulk-url-opener/kgnfciolbjojfdbbelbdbhhocjmhenep) |\n| Firefox | Official Version | 1.11.2 | [Firefox Addons](https://addons.mozilla.org/firefox/addon/bulkurlopener/) |\n| Edge | Official Version | 1.11.2 | [Edge Addons](https://microsoftedge.microsoft.com/addons/detail/bulk-url-opener/cfopcknfhpogkpcnnppcaedkhokachoo) |\n| Opera | Official Version | 1.9.0 (1.11.2 Submitted) | [Opera Addons](https://addons.opera.com/en-gb/extensions/details/bulk-url-opener-2/) |\n| Desktop | Official Version | 1.11.2 | [Multi-Platform Github Releases](https://github.com/EuanRiggans/BulkURLOpener/releases) |\n| Snap [![bulkurlopener](https://snapcraft.io//bulkurlopener/badge.svg)](https://snapcraft.io/bulkurlopener) | Official Version | 1.10.0 | [Snapcraft](https://snapcraft.io/bulkurlopener) |\n\n## Running From Source\n\n#### Browser Extension\n\nTo run the app from source as a browser extension, just download / clone this repository. All you need from the repository is the 'app' folder. You can then install it to your browser. In Chrome, for example, you can navigate to the exensions page (Three dots in top right => More tools => Extensions). Then drag and drop the app folder onto that page to install it.\n\n#### Electron\n\nRunning the electron version is very simple, clone / download the repository:\n\n```shell script\nnpm install\n```\n\n```shell script\nelectron .\n```\n\n## Known Issues\n\n- Close buttons not working. This is because Firefox does not allow a window to be closed by a script, if that window was opened by a script.\n- 'Opening Tabs' window does not close. This is caused by the same issue as mentioned above.\n- Addon does not open",
+      "scores": {
+        "novelty": 0.2178,
+        "health": 0.75,
+        "relevance": 0.7824,
+        "author_rep": 0.0,
+        "gem_score": 0.4903
+      },
+      "concepts": [
+        "-",
+        "https",
+        "official version",
+        "- add",
+        "version",
+        "add",
+        "version 1.11.2",
+        "official"
+      ]
+    },
+    {
+      "name": "utarwyn/discord-tictactoe",
+      "url": "https://github.com/utarwyn/discord-tictactoe",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<picture>\n  <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://i.imgur.com/hzVv8Cx.png\">\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"https://i.imgur.com/d9ldRKK.png\">\n  <img alt=\"Discord TicTacToe logo\" src=\"https://i.imgur.com/d9ldRKK.png\">\n</picture>\n\n<div align=\"center\">\n  <p>\n    <strong>\n      An innovative Bot for playing Tic Tac Toe on Discord!\n      <br />\n      Created with <a href=\"https://github.com/discordjs/discord.js\">discord.js</a>.\n    </strong>\n  </p>\n\n  <p>\n    <a href=\"https://github.com/utarwyn/discord-tictactoe/releases/latest\"><img src=\"https://img.shields.io/github/v/release/utarwyn/discord-tictactoe\" alt=\"GitHub release\"></a>\n    <a href=\"https://npmjs.com/package/discord-tictactoe\"><img src=\"https://img.shields.io/npm/dt/discord-tictactoe?color=eb2f06&logo=npm\" alt=\"npm Downloads\"></a>\n    <a href=\"https://hub.docker.com/r/utarwyn/discord-tictactoe\"><img src=\"https://img.shields.io/badge/docker-available-blue?logo=docker&color=0db7ed\" alt=\"Available on DockerHub\"></a>\n    <a href=\"https://sonarcloud.io/dashboard?id=utarwyn_discord-tictactoe\"><img src=\"https://sonarcloud.io/api/project_badges/measure?project=utarwyn_discord-tictactoe&metric=alert_status\" alt=\"Quality Gate Status\"></a>\n  </p>\n  \n  <img src=\"https://i.imgur.com/QB7z1j4.gif\" alt=\"demo\" />\n</div>\n\n## About\n\n\"Discord TicTacToe\" is a **self-hosted NodeJS bot** which allows you to play the popular TicTacToe game on Discord.\nInvite your friends or play against our robot, a fearsome opponent. Use `/tictactoe` command to challenge someone else\nand use buttons to play, so simple! Works **out-of-the-box**, no configuration needed.\n\nIf you have a problem when using the bot, or you want to propose a new feature, feel free to open an issue.\n\nHave fun! 🥳\n\n## Requirements\n\nBefore installing the bot, you need to create your own [Discord Application][6].\nThen, you can install the bot via Docker or npm (check below!). If you are not a programmer, I recommend you to opt for ",
+      "scores": {
+        "novelty": 0.184,
+        "health": 0.75,
+        "relevance": 0.7614,
+        "author_rep": 0.0,
+        "gem_score": 0.4733
+      },
+      "concepts": [
+        "https",
+        "src https",
+        ".",
+        "bot",
+        "docker",
+        "href https",
+        "img src",
+        "##"
+      ]
+    },
+    {
+      "name": "wheelos/apollo-lite",
+      "url": "https://github.com/wheelos/apollo-lite",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "<div align=\"center\">\n\n<h1>\n  <a href=\"#\"><img src=\"docs/images/wheelos.jpg\" width=\"100%\"/></a>\n</h1>\n\n[English](README.md) | [中文](README.zh-cn.md) | [한국어](README.ko.md) | [日本語](README.ja.md)\n\n<p>\n  <a href=\"https://github.com/wheelos/apollo-lite/actions/workflows/lint-format.yml?query=main\" alt=\"GitHub Actions\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/wheelos/apollo-lite/lint-format.yml?branch=main\">\n  </a>\n  <a href='https://readthedocs.org/projects/apollo-lite/badge/?version=latest' alt='Documentation Status'>\n      <img src='https://readthedocs.org/projects/apollo-lite/badge/?version=latest' alt='Documentation Status' />\n  </a>\n  <a href=\"https://github.com/wheelos/apollo-lite/blob/main/LICENSE\" alt=\"License\">\n    <img src=\"https://img.shields.io/github/license/wheelos/apollo-lite\">\n  </a>\n</p>\n\nA high-performance autonomous driving system\n</div>\n\n## Table of Contents\n\n- [Introduction](#introduction)\n- [Prerequisites](#prerequisites)\n- [Quick Start](#quick-start)\n- [Copyright and License](#copyright-and-license)\n- [Connect with Us](#connect-with-us)\n\n---\n\n## Introduction\n\nApollo-Lite provides powerful modules and features for autonomous driving development.\nBefore getting started, please ensure your environment meets the prerequisites and follow the installation instructions below.\n\nFor a deeper understanding, refer to the following documents:\n- Design Document: [[中文](https://fcn5tm1hmy9p.feishu.cn/wiki/J5ujwMD44iz6IlkD7etcFfrinZf?fromScene=spaceOverview) | [English]]\n- Integration Document: [[中文](https://fcn5tm1hmy9p.feishu.cn/wiki/WQVmwCVw6i93wOk68QRchUQMnwe?fromScene=spaceOverview) | [English]]\n- Development Process: [[中文](https://fcn5tm1hmy9p.feishu.cn/wiki/XdlSwmdLiiDXBdkuF9qcwKFun2d?fromScene=spaceOverview) | [English]]\n- Tools Document: [[中文](https://fcn5tm1hmy9p.feishu.cn/wiki/SQVtw66pCiJlOTkZBoCc4tzlnzg?fromScene=spaceOverview) | [English]]\n- Product Manual: [[中文](https://fcn5tm1hmy9p.feishu.cn/wiki/Y4WKw4oX4iCfQ8kmmabccgEUnhf",
+      "scores": {
+        "novelty": 0.3471,
+        "health": 0.5,
+        "relevance": 0.7754,
+        "author_rep": 0.0,
+        "gem_score": 0.4727
+      },
+      "concepts": [
+        "-",
+        "https",
+        "中文 https",
+        "fromscene spaceoverview",
+        "spaceoverview english",
+        "english -",
+        "bash",
+        "english"
+      ]
+    },
+    {
+      "name": "anchore/stereoscope",
+      "url": "https://github.com/anchore/stereoscope",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# stereoscope\n\n<p align=\"center\">\n    &nbsp;<a href=\"https://goreportcard.com/report/github.com/anchore/stereoscope\"><img src=\"https://goreportcard.com/badge/github.com/anchore/stereoscope\" alt=\"Go Report Card\"></a>&nbsp;\n    &nbsp;<a href=\"https://github.com/anchore/stereoscope\"><img src=\"https://img.shields.io/github/go-mod/go-version/anchore/stereoscope.svg\" alt=\"GitHub go.mod Go version\"></a>&nbsp;\n    &nbsp;<a href=\"https://github.com/anchore/stereoscope/blob/main/LICENSE\"><img src=\"https://img.shields.io/badge/License-Apache%202.0-blue.svg\" alt=\"License: Apache-2.0\"></a>&nbsp;\n    &nbsp;<a href=\"https://anchore.com/discourse\"><img src=\"https://img.shields.io/badge/Discourse-Join-blue?logo=discourse\" alt=\"Join our Discourse\"></a>&nbsp;\n</p>\n\nA library for working with container image contents, layer file trees, and squashed file trees.\n\n## Getting Started\n\nSee `examples/basic.go`\n\n```bash\ndocker image save centos:8 -o centos.tar\ngo run examples/basic.go ./centos.tar\n```\n\nNote: To run tests you will need `skopeo` installed.\n\n## Overview\n\nThis library provides the means to:\n- parse and read images from multiple sources, supporting:\n  - docker V2 schema images from the docker daemon, podman, or archive\n  - OCI images from disk, directory, or registry\n  - singularity formatted image files\n- build a file tree representing each layer blob\n- create a squashed file tree representation for each layer\n- search one or more file trees for selected paths\n- catalog file metadata in all layers\n- query the underlying image tar for content (file content within a layer)\n",
+      "scores": {
+        "novelty": 0.1755,
+        "health": 0.75,
+        "relevance": 0.7779,
+        "author_rep": 0.0,
+        "gem_score": 0.4724
+      },
+      "concepts": [
+        "-",
+        "nbsp",
+        "https",
+        "file",
+        "nbsp href",
+        "href https",
+        "img src",
+        "src https"
+      ]
+    },
+    {
+      "name": "krojew/springtime",
+      "url": "https://github.com/krojew/springtime",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Springtime Framework\n\nThe Springtime Framework is a modular framework for advanced Rust applications. Please see the \nREADME/documentation files for individual crates for more information:\n\n* [`springtime`](https://github.com/krojew/springtime/tree/master/springtime) - application framework based on dependency injection \n* [`springtime-di`](https://github.com/krojew/springtime/tree/master/springtime-di) - declarative dependency injection\n* [`springtime-web-axum`](https://github.com/krojew/springtime/tree/master/springtime-web-axum) - web framework based on [axum](https://crates.io/crates/axum)\n* [`springtime-migrate-refinery`](https://github.com/krojew/springtime/tree/master/springtime-migrate-refinery) - SQL migration framework based on dependency injection\n",
+      "scores": {
+        "novelty": 0.1737,
+        "health": 0.75,
+        "relevance": 0.7717,
+        "author_rep": 0.0,
+        "gem_score": 0.4719
+      },
+      "concepts": [
+        "framework",
+        "https",
+        "framework based",
+        "dependency injection",
+        "-",
+        "springtime framework",
+        "based dependency",
+        "springtime"
+      ]
+    },
+    {
+      "name": "dahomey-technologies/rustis",
+      "url": "https://github.com/dahomey-technologies/rustis",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "An asynchronous Redis client for Rust.\n\n[![Crate](https://img.shields.io/crates/v/rustis.svg)](https://crates.io/crates/rustis)\n[![docs.rs](https://docs.rs/rustis/badge.svg)](https://docs.rs/rustis)\n[![Build](https://github.com/dahomey-technologies/rustis/actions/workflows/compile_and_test.yml/badge.svg)](https://github.com/dahomey-technologies/rustis/actions/workflows/compile_and_test.yml)\n[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n[![libs.tech recommends](https://libs.tech/project/530004740/badge.svg)](https://libs.tech/project/530004740/rustis)\n\n# Documentation\n\n[Official Documentation](https://docs.rs/rustis/latest/rustis/)\n\n# Philosophy\n\n* Low allocations\n* Full async library\n* Lock free implementation\n* Rust idiomatic API\n* Multiplexing as a core feature\n\n# Features\n\n* Full documentation with multiple examples\n* Support all [Redis Commands](https://redis.io/commands/) until Redis 8.0\n* Async support ([tokio](https://tokio.rs/) or [async-std](https://async.rs/))\n* Different client modes:\n  * Single client\n  * [Multiplexed](https://redis.com/blog/multiplexing-explained/) client\n  * Pooled client manager (based on [bb8](https://docs.rs/bb8/latest/bb8/))\n* Automatic command batching\n* Advanced reconnection & retry strategy\n* [Pipelining](https://redis.io/docs/manual/pipelining/) support\n* Configuration with Redis URL or dedicated builder\n* [TLS](https://redis.io/docs/latest/operate/oss_and_stack/management/security/encryption/) support\n* [Transaction](https://redis.io/docs/manual/transactions/) support\n* [Pub/sub](https://redis.io/docs/manual/pubsub/) support\n* [Sentinel](https://redis.io/docs/manual/sentinel/) support\n* [LUA Scripts/Functions](https://redis.io/docs/manual/programmability/) support\n* [Cluster](https://redis.io/docs/manual/scaling/) support (minimus supported Redis version is 6)\n* [Client-side caching](https://redis.io/docs/latest/develop/reference/client-side-caching/) support\n* [RedisGraph v2.10](https://redis.io/doc",
+      "scores": {
+        "novelty": 0.1489,
+        "health": 0.75,
+        "relevance": 0.7817,
+        "author_rep": 0.0,
+        "gem_score": 0.4621
+      },
+      "concepts": [
+        "https",
+        "redis",
+        "support",
+        "client",
+        "#",
+        "run cargo",
+        "command",
+        "run"
+      ]
+    },
+    {
+      "name": "multani/docker-nomad",
+      "url": "https://github.com/multani/docker-nomad",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Run [Nomad](https://www.nomadproject.io) from a Docker container\n\n[![Docker Pulls](https://img.shields.io/docker/pulls/multani/nomad.svg)](https://hub.docker.com/r/multani/nomad/)\n\nThis repository builds a Docker image to run the [Nomad](https://www.nomadproject.io) scheduler.\n\nThe image is mostly useful for testing purpose, when you want to ship a small\nstack running Nomad along other containers.\n\nGet the image using:\n\n```sh\ndocker pull ghcr.io/multani/nomad\n```\nor:\n\n```sh\ndocker pull multani/nomad\n```\n\nSee below for examples on how to start a Nomad client or server.\n\nThis image is meant to be run with host network privileges.\nNomad itself can be configured:\n\n* either by bind-mounting [HCL/JSON configuration\n  files](https://www.nomadproject.io/docs/configuration/) into `/etc/nomad`\n\n* and/or by setting the configuration content directly into the\n  `NOMAD_LOCAL_CONFIG` environment variable (see examples below).\n\nYou also need to bind-mount the following directories (unless you really now\nwhat you are doing):\n\n* `/var/run/docker.sock`: to access the Docker socket, used by Nomad Docker's\n  driver\n* `/tmp`: default temporary directory used by Nomad's `-dev` mode\n\nYou can run the container as a non-root user, in which case you should set the\n`NOMAD_DISABLE_PERM_MGMT` environment variable to any value. This is especially\nuseful when running standalone Nomad servers.\n\nThe repository produces a dockerized version of Nomad following Hashicorp's\nmodel for their [Dockerized Consul\nimage](https://github.com/hashicorp/docker-consul). It is based on the work from\n[djenriquez/nomad](https://github.com/djenriquez/nomad).\n\n\n## To run:\n\nYou can use the Docker Compose file to get started:\n\n```bash\ndocker compose up\n```\n\nThe relevant Docker Compose bits are:\n\n```yaml\nversion: '2.1'\n\nservices:\n  nomad:\n    image: multani/nomad\n    build: .\n    command: agent -dev\n    privileged: true\n    network_mode: host\n    environment:\n      NOMAD_LOCAL_CONFIG: |\n        data_dir = \"/nomad/data/",
+      "scores": {
+        "novelty": 0.2727,
+        "health": 0.5,
+        "relevance": 0.7583,
+        "author_rep": 0.0,
+        "gem_score": 0.4396
+      },
+      "concepts": [
+        "nomad",
+        "docker",
+        "run",
+        "https",
+        "host",
+        "image",
+        ".",
+        "getprivateip"
+      ]
+    },
+    {
+      "name": "etcd-io/etcd-operator",
+      "url": "https://github.com/etcd-io/etcd-operator",
+      "description": "",
+      "language": "module",
+      "license": "Apache-2.0",
+      "readme_snippet": "# etcd-operator\n\nThe official Kubernetes operator for etcd.\n\n## Community, discussion, contribution, and support\n\nLearn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).\n\nYou can reach the maintainers of this project at:\n\n- [Slack channel](https://kubernetes.slack.com/messages/wg-etcd-operator)\n- [Mailing list](https://groups.google.com/a/kubernetes.io/g/wg-etcd-operator)\n\n### Code of conduct\n\nParticipation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).\n\n## Getting Started\n\n### Prerequisites\n\n- go version v1.24+\n- docker version 17.03+.\n- kubectl version v1.11.3+.\n- Access to a Kubernetes v1.11.3+ cluster.\n\n### To Deploy on the cluster\n\n**Build and push your image to the location specified by `IMG`:**\n\n```sh\nmake docker-build docker-push IMG=<some-registry>/etcd-operator:tag\n```\n\n**NOTE:** This image ought to be published in the personal registry you specified.\nAnd it is required to have access to pull the image from the working environment.\nMake sure you have the proper permission to the registry if the above commands don’t work.\n\n**Install the CRDs into the cluster:**\n\n```sh\nmake install\n```\n\n**Deploy the Manager to the cluster with the image specified by `IMG`:**\n\n```sh\nmake deploy IMG=<some-registry>/etcd-operator:tag\n```\n\n> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin\nprivileges or be logged in as admin.\n\n**Create instances of your solution**\nYou can apply the samples (examples) from the config/sample:\n\n```sh\nkubectl apply -k config/samples/\n```\n\n>**NOTE**: Ensure that the samples has default values to test it out.\n\n### To Uninstall\n\n**Delete the instances (CRs) from the cluster:**\n\n```sh\nkubectl delete -k config/samples/\n```\n\n**Delete the APIs(CRDs) from the cluster:**\n\n```sh\nmake uninstall\n```\n\n**UnDeploy the controller from the cluster:**\n\n```sh\nmake undeploy\n```\n\n## Project Distribution\n\nFollowing are the steps to bui",
+      "scores": {
+        "novelty": 0.1726,
+        "health": 0.5,
+        "relevance": 0.7963,
+        "author_rep": 0.0,
+        "gem_score": 0.4124
+      },
+      "concepts": [
+        "sh make",
+        "sh",
+        "make",
+        "cluster sh",
+        "project",
+        "-",
+        "cluster",
+        "kubernetes"
+      ]
+    },
+    {
+      "name": "cfw-guide/dsi.cfw.guide",
+      "url": "https://github.com/cfw-guide/dsi.cfw.guide",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "## dsi.cfw.guide\nThe complete guide to modding your Nintendo DSi. \n\nhttps://dsi.cfw.guide\n\n## Running the site locally\n\nThis requires the following installed to your system:\n- node.js, v20 or later\n- its respective npm\n\nTo test the website locally, simply run the following commands:\n```\nnpm install\n```\nto install all packages required by the website (VuePress v2 and plugins), then\n```\nnpm run docs:dev\n```\nto build the Markdown files into HTML and start a testing webserver on http://127.0.0.1:5173.\n\n## Translating\n\nTo help translate dsi.cfw.guide, please contribute to its [Crowdin project](https://crowdin.com/project/dsi-guide) ([In-Context](https://dsi.cfw.guide/translate/)), do not PR changes directly to the repository as that will conflict with the translations managed by Crowdin.\n",
+      "scores": {
+        "novelty": 0.1869,
+        "health": 0.5,
+        "relevance": 0.7618,
+        "author_rep": 0.0,
+        "gem_score": 0.4106
+      },
+      "concepts": [
+        "##",
+        "https",
+        "npm",
+        "dsi.cfw.guide",
+        "locally",
+        "following",
+        "-",
+        "website"
+      ]
+    },
+    {
+      "name": "gallantlab/himalaya",
+      "url": "https://github.com/gallantlab/himalaya",
+      "description": "",
+      "language": "module",
+      "license": "BSD-3-Clause",
+      "readme_snippet": "Himalaya: Multiple-target linear models\n=======================================\n\n|Github| |Python| |License| |Build| |Codecov| |Downloads|\n\n``Himalaya`` [1]_ implements machine learning linear models in Python, focusing\non computational efficiency for large numbers of targets.\n\nUse ``himalaya`` if you need a library that:\n\n- estimates linear models on large numbers of targets,\n- runs on CPU and GPU hardware,\n- provides estimators compatible with ``scikit-learn``'s API.\n\n``Himalaya`` is stable (with particular care for backward compatibility) and\nopen for public use (give it a star!).\n\nExample\n=======\n\n.. code-block:: python\n\n    import numpy as np\n    n_samples, n_features, n_targets = 10, 5, 4\n    np.random.seed(0)\n    X = np.random.randn(n_samples, n_features)\n    Y = np.random.randn(n_samples, n_targets)\n\n    from himalaya.ridge import RidgeCV\n    model = RidgeCV(alphas=[1, 10, 100])\n    model.fit(X, Y)\n    print(model.best_alphas_)  # [ 10. 100.  10. 100.]\n\n\n- The model ``RidgeCV`` uses the same API as ``scikit-learn``\n  estimators, with methods such as ``fit``, ``predict``, ``score``, etc.\n- The model is able to efficiently fit a large number of targets (routinely\n  used with 100k targets).\n- The model selects the best hyperparameter ``alpha`` for each target\n  independently.\n\nMore examples\n-------------\n\nCheck more examples of use of ``himalaya`` in the `gallery of examples\n<https://gallantlab.github.io/himalaya/_auto_examples/index.html>`_.\n\nTutorials using ``himalaya`` for fMRI\n-------------------------------------\n\n``Himalaya`` was designed primarily for functional magnetic resonance imaging\n(fMRI) encoding models. In depth tutorials about using ``himalaya`` for fMRI\nencoding models can be found at `gallantlab/voxelwise_tutorials\n<https://github.com/gallantlab/voxelwise_tutorials>`_.\n\nModels\n======\n\n``Himalaya`` implements the following models:\n\n- Ridge, RidgeCV\n- KernelRidge, KernelRidgeCV\n- GroupRidgeCV, MultipleKernelRidgeCV, WeightedKernelRidge\n- Sparse",
+      "scores": {
+        "novelty": 0.1497,
+        "health": 0.5,
+        "relevance": 0.7828,
+        "author_rep": 0.0,
+        "gem_score": 0.4066
+      },
+      "concepts": [
+        "himalaya",
+        "https",
+        "-",
+        "..",
+        ".. code-block",
+        "image https",
+        "target https",
+        "python"
+      ]
+    },
+    {
+      "name": "codebar/planner",
+      "url": "https://github.com/codebar/planner",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# codebar website & event planner\n\n[![CI](https://github.com/codebar/planner/actions/workflows/ruby.yml/badge.svg)](https://github.com/codebar/planner/actions/workflows/ruby.yml)\n[![Coverage Status](https://coveralls.io/repos/codebar/planner/badge.png)](https://coveralls.io/r/codebar/planner)\n\nA tool to help manage [codebar.io](https://codebar.io) members and events.\n\nIf you are considering making a PR, please take a look at the [GitHub issues](https://github.com/codebar/planner/issues) to see if there are any new feature requirements or bugs that you maybe able to help resolve.\n\n**Need help? [We're on Slack!](https://slack.codebar.io)**\n\n## Getting Started\n\nThe following steps walk through getting the application running. Before you start, please check out our [contributing guidelines](https://github.com/codebar/planner/blob/master/CONTRIBUTING.md).\n\n1. [Clone the project](#1-clone-the-project)\n2. [Enable GitHub Authentication](#2-enable-github-authentication)\n3. [Install and set up the environment using docker](#3-install-and-set-up-the-environment-using-docker)\n4. [Start the app](#4-start-the-app)\n5. [Run the tests](#5-run-the-tests)\n\n### 1. Clone the project\n\n1. Navigate to your project's chosen parent directory, e.g. `cd ~/Documents/codebar`\n2. [Clone the project](https://help.github.com/articles/cloning-a-repository/), e.g. `git clone git@github.com:codebar/planner.git`\n3. Navigate into the project directory: `cd planner`\n\n### 2. Enable GitHub Authentication\n\nThe application uses GitHub OAuth for user authentication. You'll need to create a new OAuth application on your GitHub account, then add the key and secret to your project's environment variables.\n\n#### Create a new Github OAuth application\n\nVisit [https://github.com/settings/applications/new](https://github.com/settings/applications/new) and fill out the form to create a new application. Use these field values:\n\n| Field | Value |\n| --- | --- |\n| Application name | Something memorable, like 'codebar plan",
+      "scores": {
+        "novelty": 0.2474,
+        "health": 0.25,
+        "relevance": 0.7774,
+        "author_rep": 0.0,
+        "gem_score": 0.3713
+      },
+      "concepts": [
+        ".",
+        "https",
+        "run",
+        "-",
+        "application",
+        "start",
+        "docker",
+        "can"
+      ]
+    },
+    {
+      "name": "informatici/openhospital-core",
+      "url": "https://github.com/informatici/openhospital-core",
+      "description": "",
+      "language": "module",
+      "license": "GPL-3.0",
+      "readme_snippet": "# Open Hospital - Core\n[![Java CI](https://github.com/informatici/openhospital-core/workflows/Java%20CI%20with%20Maven/badge.svg)](https://github.com/informatici/openhospital-core/actions?query=workflow%3A%22Java+CI+with+Maven%22)\n\nThis is the Core component of [Open Hospital][openhospital]: it contains the business logic and the data abstraction layer.  \nThe Core component is used by the [Java Swing desktop GUI][openhospital-gui], and by the [web UI][openhospital-ui] (through the [API component][openhospital-api]).\n\n## How to build\n\nAfter having installed Java JDK 17+ and Maven (or using the provided Maven Wrapper `mvnw`), to build this project issue:  \n\n    mvn package\n\nTo use the Core component in the other projects, you'll need to install it locally with:\n\n    mvn install\n    \nTo run the tests simply issue:\n\n    mvn test\n\nNote: tests are run against an in-memory database (H2). \n\nTo run tests against a MariaDB instance, see [How to run DB with Docker](#how-to-run-db-with-docker)\n\nThen you can change [`src/test/resources/resources/database.properties`][database.prop]\n\nFrom:\n\n    jdbc.class=org.h2.Driver\n    jdbc.url=jdbc:h2:mem:myDb;MODE=MySQL;IGNORECASE=TRUE;DB_CLOSE_DELAY=-1\n    ...\n    hibernate.dialect=org.hibernate.dialect.H2Dialect\n    hibernate.hbm2ddl.auto=update\n    jdbc.username=root\n    jdbc.password=root\n\nTo: (use .env variables):\n\n    jdbc.url=jdbc:mysql://localhost:[OH_MARIADB_PORT]/[OH_MARIADB_DATABASE]\n    jdbc.username=[OH_MARIADB_USER]\n    jdbc.password=[OH_MARIADB_PASSWORD]\n\n\n## How to run DB with Docker\n\nCopy `dotenv` into `.env` and set parameters as needed, otherwise defaults will be used:\n\n    OH_MARIADB_DATABASE=oh\n    OH_MARIADB_ROOT_PASSWORD=root\n    OH_MARIADB_USER=isf\n    OH_MARIADB_PASSWORD=isf123\n    OH_MARIADB_PORT=3306\n    OH_DB_LANG=en # refer to sql/data_xx/ folders\n\nClean previous builds:\n\n    docker compose rm --stop --volumes --force\n    \nBuild and run a mariadb instance at `localhost:[OH_MARIADB_PORT]`:\n\n    docker-compose up\n",
+      "scores": {
+        "novelty": 0.2364,
+        "health": 0.25,
+        "relevance": 0.7776,
+        "author_rep": 0.0,
+        "gem_score": 0.3699
+      },
+      "concepts": [
+        "select",
+        "code style",
+        "project",
+        "https",
+        "style",
+        ".",
+        "code",
+        "open"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "html"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 30,
+    "explore_longtail": false,
+    "max_stars": 100,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution to discover......",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": true
+  },
+  "metrics": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "html"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 76,
+    "probed": 20,
+    "selected": 19,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "Qiskit/qiskit-serverless",
+        "url": "https://github.com/Qiskit/qiskit-serverless",
+        "license": "Apache-2.0",
+        "role": "module (Python)",
+        "novelty_score": 0.3983,
+        "relevance": 0.7716,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "1.",
+          "https",
+          "qiskit",
+          "qiskit serverless",
+          "docker",
+          "serverless",
+          "infrastructure",
+          "shell"
+        ],
+        "gem_score": 0.7323
+      },
+      {
+        "name": "pyta-uoft/pyta",
+        "url": "https://github.com/pyta-uoft/pyta",
+        "license": "GPL-3.0",
+        "role": "module (Python)",
+        "novelty_score": 0.387,
+        "relevance": 0.7631,
+        "health_score": 1.0,
+        "author_rep": 0.0,
+        "concepts": [
+          "pyta",
+          "python",
+          ".",
+          "install",
+          "run",
+          "https",
+          "errors",
+          "tools"
+        ],
+        "gem_score": 0.6048
+      },
+      {
+        "name": "ScrollPrize/villa",
+        "url": "https://github.com/ScrollPrize/villa",
+        "license": "MIT",
+        "role": "module (Python)",
+        "novelty_score": 0.4252,
+        "relevance": 0.7918,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "###",
+          "vesuvius challenge",
+          "ancient scrolls.",
+          ".",
+          "--- ##",
+          "ct scans",
+          "scans ancient"
+        ],
+        "gem_score": 0.5667
+      },
+      {
+        "name": "avalonmediasystem/avalon",
+        "url": "https://github.com/avalonmediasystem/avalon",
+        "license": "Apache-2.0",
+        "role": "module (Ruby)",
+        "novelty_score": 0.4131,
+        "relevance": 0.7864,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "avalon",
+          "https",
+          "docker",
+          "up",
+          "docker-compose",
+          "run",
+          "exec",
+          "avalon media"
+        ],
+        "gem_score": 0.5617
+      },
+      {
+        "name": "believer-oss/ethos",
+        "url": "https://github.com/believer-oss/ethos",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.3859,
+        "relevance": 0.779,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "s",
+          "birdie",
+          "git",
+          "mode",
+          "here",
+          "files"
+        ],
+        "gem_score": 0.5469
+      },
+      {
+        "name": "Ginger-Automation/Ginger",
+        "url": "https://github.com/Ginger-Automation/Ginger",
+        "license": "Apache-2.0",
+        "role": "module (C#)",
+        "novelty_score": 0.3594,
+        "relevance": 0.7717,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "ginger",
+          "#",
+          "https",
+          "###",
+          "automation",
+          "can",
+          "### ginger"
+        ],
+        "gem_score": 0.5357
+      },
+      {
+        "name": "tibiadata/tibiadata-api-go",
+        "url": "https://github.com/tibiadata/tibiadata-api-go",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.3005,
+        "relevance": 0.754,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "- get",
+          "https",
+          "get",
+          "api",
+          "docker",
+          "tibiadata",
+          "endpoints"
+        ],
+        "gem_score": 0.5097
+      },
+      {
+        "name": "EuanRiggans/BulkURLOpener",
+        "url": "https://github.com/EuanRiggans/BulkURLOpener",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.2178,
+        "relevance": 0.7824,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "official version",
+          "- add",
+          "version",
+          "add",
+          "version 1.11.2",
+          "official"
+        ],
+        "gem_score": 0.4903
+      },
+      {
+        "name": "utarwyn/discord-tictactoe",
+        "url": "https://github.com/utarwyn/discord-tictactoe",
+        "license": "Apache-2.0",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.184,
+        "relevance": 0.7614,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "src https",
+          ".",
+          "bot",
+          "docker",
+          "href https",
+          "img src",
+          "##"
+        ],
+        "gem_score": 0.4733
+      },
+      {
+        "name": "wheelos/apollo-lite",
+        "url": "https://github.com/wheelos/apollo-lite",
+        "license": "Apache-2.0",
+        "role": "module (C++)",
+        "novelty_score": 0.3471,
+        "relevance": 0.7754,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "中文 https",
+          "fromscene spaceoverview",
+          "spaceoverview english",
+          "english -",
+          "bash",
+          "english"
+        ],
+        "gem_score": 0.4727
+      },
+      {
+        "name": "anchore/stereoscope",
+        "url": "https://github.com/anchore/stereoscope",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.1755,
+        "relevance": 0.7779,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "nbsp",
+          "https",
+          "file",
+          "nbsp href",
+          "href https",
+          "img src",
+          "src https"
+        ],
+        "gem_score": 0.4724
+      },
+      {
+        "name": "krojew/springtime",
+        "url": "https://github.com/krojew/springtime",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.1737,
+        "relevance": 0.7717,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "framework",
+          "https",
+          "framework based",
+          "dependency injection",
+          "-",
+          "springtime framework",
+          "based dependency",
+          "springtime"
+        ],
+        "gem_score": 0.4719
+      },
+      {
+        "name": "dahomey-technologies/rustis",
+        "url": "https://github.com/dahomey-technologies/rustis",
+        "license": "MIT",
+        "role": "module (Rust)",
+        "novelty_score": 0.1489,
+        "relevance": 0.7817,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "redis",
+          "support",
+          "client",
+          "#",
+          "run cargo",
+          "command",
+          "run"
+        ],
+        "gem_score": 0.4621
+      },
+      {
+        "name": "multani/docker-nomad",
+        "url": "https://github.com/multani/docker-nomad",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.2727,
+        "relevance": 0.7583,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "nomad",
+          "docker",
+          "run",
+          "https",
+          "host",
+          "image",
+          ".",
+          "getprivateip"
+        ],
+        "gem_score": 0.4396
+      },
+      {
+        "name": "etcd-io/etcd-operator",
+        "url": "https://github.com/etcd-io/etcd-operator",
+        "license": "Apache-2.0",
+        "role": "module (Go)",
+        "novelty_score": 0.1726,
+        "relevance": 0.7963,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "sh make",
+          "sh",
+          "make",
+          "cluster sh",
+          "project",
+          "-",
+          "cluster",
+          "kubernetes"
+        ],
+        "gem_score": 0.4124
+      },
+      {
+        "name": "cfw-guide/dsi.cfw.guide",
+        "url": "https://github.com/cfw-guide/dsi.cfw.guide",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.1869,
+        "relevance": 0.7618,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "##",
+          "https",
+          "npm",
+          "dsi.cfw.guide",
+          "locally",
+          "following",
+          "-",
+          "website"
+        ],
+        "gem_score": 0.4106
+      },
+      {
+        "name": "gallantlab/himalaya",
+        "url": "https://github.com/gallantlab/himalaya",
+        "license": "BSD-3-Clause",
+        "role": "module (Python)",
+        "novelty_score": 0.1497,
+        "relevance": 0.7828,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "himalaya",
+          "https",
+          "-",
+          "..",
+          ".. code-block",
+          "image https",
+          "target https",
+          "python"
+        ],
+        "gem_score": 0.4066
+      },
+      {
+        "name": "codebar/planner",
+        "url": "https://github.com/codebar/planner",
+        "license": "MIT",
+        "role": "module (Ruby)",
+        "novelty_score": 0.2474,
+        "relevance": 0.7774,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          ".",
+          "https",
+          "run",
+          "-",
+          "application",
+          "start",
+          "docker",
+          "can"
+        ],
+        "gem_score": 0.3713
+      },
+      {
+        "name": "informatici/openhospital-core",
+        "url": "https://github.com/informatici/openhospital-core",
+        "license": "GPL-3.0",
+        "role": "module (Java)",
+        "novelty_score": 0.2364,
+        "relevance": 0.7776,
+        "health_score": 0.25,
+        "author_rep": 0.0,
+        "concepts": [
+          "select",
+          "code style",
+          "project",
+          "https",
+          "style",
+          ".",
+          "code",
+          "open"
+        ],
+        "gem_score": 0.3699
+      }
+    ],
+    "architecture_ascii": "[1] Qiskit/qiskit-serverless  →  [2] pyta-uoft/pyta  →  [3] ScrollPrize/villa  →  [4] avalonmediasystem/avalon  →  [5] believer-oss/ethos  →  [6] Ginger-Automation/Ginger  →  [7] tibiadata/tibiadata-api-go  →  [8] EuanRiggans/BulkURLOpener  →  [9] utarwyn/discord-tictactoe  →  [10] wheelos/apollo-lite  →  [11] anchore/stereoscope  →  [12] krojew/springtime  →  [13] dahomey-technologies/rustis  →  [14] multani/docker-nomad  →  [15] etcd-io/etcd-operator  →  [16] cfw-guide/dsi.cfw.guide  →  [17] gallantlab/himalaya  →  [18] codebar/planner  →  [19] informatici/openhospital-core\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "machine learning",
+        "docker",
+        "rust",
+        "html"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 76,
+      "probed": 20,
+      "selected": 19,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}

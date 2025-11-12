@@ -231,7 +231,7 @@ class RepoCache:
         self.conn.commit()
     
     def cache_embedding(self, repo_full_name: str, embedding: List[float], 
-                       model: str = "text-embedding-3-small", ttl_hours: int = 168):
+                       model: str = "thenlper/gte-small", ttl_hours: int = 168):
         """Cache embedding vector."""
         cursor = self.conn.cursor()
         
@@ -456,12 +456,6 @@ class RepoCache:
         
         return repos_deleted, readmes_deleted, health_deleted, embeddings_deleted
     
-    def get_repo_count(self) -> int:
-        """Get total number of cached repositories."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM repositories")
-        return cursor.fetchone()[0]
-    
     def get_stats(self) -> Dict:
         """Get cache statistics."""
         cursor = self.conn.cursor()
@@ -503,6 +497,32 @@ class RepoCache:
         ]
         
         return stats
+    
+    def get_repo_count(self):
+        """Get total number of cached repositories."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM repositories")
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except Exception as e:
+            return 0
+
+    def clear_all(self):
+        """Clear all cached data from database."""
+        try:
+            cursor = self.conn.cursor()
+            # Delete from all tables in reverse dependency order
+            cursor.execute("DELETE FROM discovery_scores")
+            cursor.execute("DELETE FROM health_metrics")
+            cursor.execute("DELETE FROM readmes")
+            cursor.execute("DELETE FROM repositories")
+            cursor.execute("DELETE FROM processed_repos")
+            self.conn.commit()
+            return True
+        except Exception as e:
+            self.conn.rollback()
+            return False
     
     def close(self):
         """Close database connection."""

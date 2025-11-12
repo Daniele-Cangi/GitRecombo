@@ -1,0 +1,398 @@
+{
+  "timestamp": "2025-11-12T19:02:13.833370",
+  "mode": "ultra_autonomous",
+  "discovery_method": "discover.py_full_mode",
+  "embeddings_used": true,
+  "refined_goal": "find solution to discover......",
+  "repository_synergy": "",
+  "technical_architecture": "",
+  "expected_impact": "",
+  "innovation_analysis": "",
+  "sources": [
+    {
+      "name": "electron/electron",
+      "url": "https://github.com/electron/electron",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![Electron Logo](https://electronjs.org/images/electron-logo.svg)](https://electronjs.org)\n\n[![GitHub Actions Build Status](https://github.com/electron/electron/actions/workflows/build.yml/badge.svg)](https://github.com/electron/electron/actions/workflows/build.yml)\n[![Electron Discord Invite](https://img.shields.io/discord/745037351163527189?color=%237289DA&label=chat&logo=discord&logoColor=white)](https://discord.gg/electronjs)\n\n:memo: Available Translations: 🇨🇳 🇧🇷 🇪🇸 🇯🇵 🇷🇺 🇫🇷 🇺🇸 🇩🇪.\nView these docs in other languages on our [Crowdin](https://crowdin.com/project/electron) project.\n\nThe Electron framework lets you write cross-platform desktop applications\nusing JavaScript, HTML and CSS. It is based on [Node.js](https://nodejs.org/) and\n[Chromium](https://www.chromium.org) and is used by the\n[Visual Studio Code](https://github.com/Microsoft/vscode/) and many other [apps](https://electronjs.org/apps).\n\nFollow [@electronjs](https://twitter.com/electronjs) on Twitter for important\nannouncements.\n\nThis project adheres to the Contributor Covenant\n[code of conduct](https://github.com/electron/electron/tree/main/CODE_OF_CONDUCT.md).\nBy participating, you are expected to uphold this code. Please report unacceptable\nbehavior to [coc@electronjs.org](mailto:coc@electronjs.org).\n\n## Installation\n\nTo install prebuilt Electron binaries, use [`npm`](https://docs.npmjs.com/).\nThe preferred method is to install Electron as a development dependency in your\napp:\n\n```sh\nnpm install electron --save-dev\n```\n\nFor more installation options and troubleshooting tips, see\n[installation](docs/tutorial/installation.md). For info on how to manage Electron versions in your apps, see\n[Electron versioning](docs/tutorial/electron-versioning.md).\n\n## Platform support\n\nEach Electron release provides binaries for macOS, Windows, and Linux.\n\n* macOS (Monterey and up): Electron provides 64-bit Intel and Apple Silicon / ARM binaries for macOS.\n* Windows (Windows 10 and up): Electron provides `ia32` (`x86",
+      "scores": {
+        "novelty": 0.7109,
+        "health": 0.75,
+        "relevance": 0.7583,
+        "author_rep": 0.0,
+        "gem_score": 0.7759
+      },
+      "concepts": [
+        "electron",
+        "https",
+        ".",
+        "##",
+        "windows",
+        "binaries",
+        "see",
+        ". ##"
+      ]
+    },
+    {
+      "name": "storybookjs/storybook",
+      "url": "https://github.com/storybookjs/storybook",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<p align=\"center\">\n  <a href=\"https://storybook.js.org/?ref=readme\">\n    <picture>\n      <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://user-images.githubusercontent.com/263385/199832481-bbbf5961-6a26-481d-8224-51258cce9b33.png\">\n      <img src=\"https://user-images.githubusercontent.com/321738/63501763-88dbf600-c4cc-11e9-96cd-94adadc2fd72.png\" alt=\"Storybook\" width=\"400\" />\n    </picture>\n    \n  </a>\n  \n</p>\n\n<p align=\"center\">Build bulletproof UI components faster</p>\n\n<br/>\n\n<p align=\"center\">\n  <a href=\"https://circleci.com/gh/storybookjs/storybook\">\n    <img src=\"https://circleci.com/gh/storybookjs/storybook.svg?style=shield\" alt=\"Build Status on CircleCI\" />\n  </a>\n  <a href=\"https://codecov.io/gh/storybookjs/storybook\">\n    <img src=\"https://codecov.io/gh/storybookjs/storybook/branch/main/graph/badge.svg\" alt=\"codecov\" />\n  </a>\n  <a href=\"https://github.com/storybookjs/storybook/blob/main/LICENSE\">\n    <img src=\"https://img.shields.io/github/license/storybookjs/storybook.svg\" alt=\"License\" />\n  </a>\n  <br/>\n  <a href=\"https://discord.gg/storybook\">\n    <img src=\"https://img.shields.io/badge/discord-join-7289DA.svg?logo=discord&longCache=true&style=flat\" />\n  </a>\n  <a href=\"https://storybook.js.org/community/?ref=readme\">\n    <img src=\"https://img.shields.io/badge/community-join-4BC424.svg\" alt=\"Storybook Community\" />\n  </a>\n  <a href=\"#backers\">\n    <img src=\"https://opencollective.com/storybook/backers/badge.svg\" alt=\"Backers on Open Collective\" />\n  </a>\n  <a href=\"#sponsors\">\n    <img src=\"https://opencollective.com/storybook/tiers/sponsors/badge.svg\" alt=\"Sponsors on Open Collective\" />\n  </a>\n  <a href=\"https://x.com/intent/follow?screen_name=storybookjs\">\n    <img src=\"https://img.shields.io/twitter/follow/storybookjs?color=blue&logo=twitter\" alt=\"Official Twitter Handle\" />\n  </a>\n  <a href=\"https://api.securityscorecards.dev/projects/github.com/storybookjs/storybook\">\n    <img src=\"https://api.securityscorecards.dev/projects/github.com",
+      "scores": {
+        "novelty": 0.681,
+        "health": 0.75,
+        "relevance": 0.7648,
+        "author_rep": 0.0,
+        "gem_score": 0.6422
+      },
+      "concepts": [
+        "https",
+        "style flat-square",
+        "flat-square color",
+        "src https",
+        "style",
+        "color",
+        "href https",
+        "img src"
+      ]
+    },
+    {
+      "name": "ChatGPTNextWeb/NextChat",
+      "url": "https://github.com/ChatGPTNextWeb/NextChat",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<div align=\"center\">\n\n<a href='https://nextchat.club'>\n  <img src=\"https://github.com/user-attachments/assets/83bdcc07-ae5e-4954-a53a-ac151ba6ccf3\" width=\"1000\" alt=\"icon\"/>\n</a>\n\n<h1 align=\"center\">NextChat</h1>\n\nEnglish / [简体中文](./README_CN.md)\n\n<a href=\"https://trendshift.io/repositories/5973\" target=\"_blank\"><img src=\"https://trendshift.io/api/badge/repositories/5973\" alt=\"ChatGPTNextWeb%2FChatGPT-Next-Web | Trendshift\" style=\"width: 250px; height: 55px;\" width=\"250\" height=\"55\"/></a>\n\n✨ Light and Fast AI Assistant,with Claude, DeepSeek, GPT4 & Gemini Pro support.\n\n[![Saas][Saas-image]][saas-url]\n[![Web][Web-image]][web-url]\n[![Windows][Windows-image]][download-url]\n[![MacOS][MacOS-image]][download-url]\n[![Linux][Linux-image]][download-url]\n\n[NextChatAI](https://nextchat.club?utm_source=readme) / [iOS APP](https://apps.apple.com/us/app/nextchat-ai/id6743085599) / [Web App Demo](https://app.nextchat.club) / [Desktop App](https://github.com/Yidadaa/ChatGPT-Next-Web/releases) / [Enterprise Edition](#enterprise-edition)\n\n[saas-url]: https://nextchat.club?utm_source=readme\n[saas-image]: https://img.shields.io/badge/NextChat-Saas-green?logo=microsoftedge\n[web-url]: https://app.nextchat.club/\n[download-url]: https://github.com/Yidadaa/ChatGPT-Next-Web/releases\n[Web-image]: https://img.shields.io/badge/Web-PWA-orange?logo=microsoftedge\n[Windows-image]: https://img.shields.io/badge/-Windows-blue?logo=windows\n[MacOS-image]: https://img.shields.io/badge/-MacOS-black?logo=apple\n[Linux-image]: https://img.shields.io/badge/-Linux-333?logo=ubuntu\n\n[<img src=\"https://zeabur.com/button.svg\" alt=\"Deploy on Zeabur\" height=\"30\">](https://zeabur.com/templates/ZBUEFA) [<img src=\"https://vercel.com/button\" alt=\"Deploy on Vercel\" height=\"30\">](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FChatGPTNextWeb%2FChatGPT-Next-Web&env=OPENAI_API_KEY&env=CODE&project-name=nextchat&repository-name=NextChat) [<img src=\"https://gitpod.io/button/open-in-gitpod.svg\" alt=\"Open",
+      "scores": {
+        "novelty": 0.5921,
+        "health": 0.75,
+        "relevance": 0.787,
+        "author_rep": 0.0,
+        "gem_score": 0.6181
+      },
+      "concepts": [
+        "https",
+        "-",
+        "- x",
+        "img src",
+        "src https",
+        "x",
+        "/",
+        "##"
+      ]
+    },
+    {
+      "name": "gin-gonic/gin",
+      "url": "https://github.com/gin-gonic/gin",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "# Gin Web Framework\n\n<img align=\"right\" width=\"159px\" src=\"https://raw.githubusercontent.com/gin-gonic/logo/master/color.png\">\n\n[![Build Status](https://github.com/gin-gonic/gin/actions/workflows/gin.yml/badge.svg?branch=master)](https://github.com/gin-gonic/gin/actions/workflows/gin.yml)\n[![Trivy Security Scan](https://github.com/gin-gonic/gin/actions/workflows/trivy-scan.yml/badge.svg)](https://github.com/gin-gonic/gin/actions/workflows/trivy-scan.yml)\n[![codecov](https://codecov.io/gh/gin-gonic/gin/branch/master/graph/badge.svg)](https://codecov.io/gh/gin-gonic/gin)\n[![Go Report Card](https://goreportcard.com/badge/github.com/gin-gonic/gin)](https://goreportcard.com/report/github.com/gin-gonic/gin)\n[![Go Reference](https://pkg.go.dev/badge/github.com/gin-gonic/gin?status.svg)](https://pkg.go.dev/github.com/gin-gonic/gin?tab=doc)\n[![Sourcegraph](https://sourcegraph.com/github.com/gin-gonic/gin/-/badge.svg)](https://sourcegraph.com/github.com/gin-gonic/gin?badge)\n[![Open Source Helpers](https://www.codetriage.com/gin-gonic/gin/badges/users.svg)](https://www.codetriage.com/gin-gonic/gin)\n[![Release](https://img.shields.io/github/release/gin-gonic/gin.svg?style=flat-square)](https://github.com/gin-gonic/gin/releases)\n\n## 📰 [Announcing Gin 1.11.0!](https://gin-gonic.com/en/blog/news/gin-1-11-0-release-announcement/)\n\nRead about the latest features and improvements in Gin 1.11.0 on our official blog.\n\n---\n\nGin is a high-performance HTTP web framework written in [Go](https://go.dev/). It provides a Martini-like API but with significantly better performance—up to 40 times faster—thanks to [httprouter](https://github.com/julienschmidt/httprouter). Gin is designed for building REST APIs, web applications, and microservices where speed and developer productivity are essential.\n\n**Why choose Gin?**\n\nGin combines the simplicity of Express.js-style routing with Go's performance characteristics, making it ideal for:\n\n- Building high-throughput REST APIs\n- Developing microservic",
+      "scores": {
+        "novelty": 0.4856,
+        "health": 0.75,
+        "relevance": 0.7609,
+        "author_rep": 0.0,
+        "gem_score": 0.577
+      },
+      "concepts": [
+        "-",
+        "https",
+        "ns/op b/op",
+        "b/op allocs/op",
+        "gin",
+        "go",
+        "ns/op",
+        "b/op"
+      ]
+    },
+    {
+      "name": "microsoft/Web-Dev-For-Beginners",
+      "url": "https://github.com/microsoft/Web-Dev-For-Beginners",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "[![GitHub license](https://img.shields.io/github/license/microsoft/Web-Dev-For-Beginners.svg)](https://github.com/microsoft/Web-Dev-For-Beginners/blob/master/LICENSE)\n[![GitHub contributors](https://img.shields.io/github/contributors/microsoft/Web-Dev-For-Beginners.svg)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/graphs/contributors/)\n[![GitHub issues](https://img.shields.io/github/issues/microsoft/Web-Dev-For-Beginners.svg)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/issues/)\n[![GitHub pull-requests](https://img.shields.io/github/issues-pr/microsoft/Web-Dev-For-Beginners.svg)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/pulls/)\n[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)\n\n[![GitHub watchers](https://img.shields.io/github/watchers/microsoft/Web-Dev-For-Beginners.svg?style=social&label=Watch&maxAge=2592000)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/watchers/)\n[![GitHub forks](https://img.shields.io/github/forks/microsoft/Web-Dev-For-Beginners.svg?style=social&label=Fork&maxAge=2592000)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/network/)\n[![GitHub stars](https://img.shields.io/github/stars/microsoft/Web-Dev-For-Beginners.svg?style=social&label=Star&maxAge=2592000)](https://GitHub.com/microsoft/Web-Dev-For-Beginners/stargazers/)\n\n[![](https://dcbadge.vercel.app/api/server/ByRwuEEgH4)](https://discord.gg/zxKYvhSnVp?WT.mc_id=academic-000002-leestott)\n\n# Web Development for Beginners - A Curriculum\n\nLearn the fundamentals of web development with our 12-week comprehensive course by Microsoft Cloud Advocates. Each of the 24 lessons dives into JavaScript, CSS, and HTML through hands-on projects like terrariums, browser extensions, and space games. Engage with quizzes, discussions, and practical assignments. Enhance your skills and optimize your knowledge retention with our effective project-based pedagogy. Start your coding journey today!\n\nJoin the Azure A",
+      "scores": {
+        "novelty": 0.5716,
+        "health": 0.5,
+        "relevance": 0.7822,
+        "author_rep": 0.0,
+        "gem_score": 0.5466
+      },
+      "concepts": [
+        "https",
+        "github",
+        "-",
+        "style social",
+        "social label",
+        "https //aka.ms/genai-js-course",
+        "ai",
+        "style"
+      ]
+    },
+    {
+      "name": "nvm-sh/nvm",
+      "url": "https://github.com/nvm-sh/nvm",
+      "description": "",
+      "language": "module",
+      "license": "MIT",
+      "readme_snippet": "<a href=\"https://github.com/nvm-sh/logos\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://raw.githubusercontent.com/nvm-sh/logos/HEAD/nvm-logo-white.svg\" />\n    <img src=\"https://raw.githubusercontent.com/nvm-sh/logos/HEAD/nvm-logo-color.svg\" height=\"50\" alt=\"nvm project logo\" />\n  </picture>\n</a>\n\n\n# Node Version Manager [![Build Status](https://app.travis-ci.com/nvm-sh/nvm.svg?branch=master)][3] [![nvm version](https://img.shields.io/badge/version-v0.40.3-yellow.svg)][4] [![CII Best Practices](https://bestpractices.dev/projects/684/badge)](https://bestpractices.dev/projects/684)\n\n<!-- To update this table of contents, ensure you have run `npm install` then `npm run doctoc` -->\n<!-- START doctoc generated TOC please keep comment here to allow auto update -->\n<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->\n## Table of Contents\n\n- [Intro](#intro)\n- [About](#about)\n- [Installing and Updating](#installing-and-updating)\n  - [Install & Update Script](#install--update-script)\n    - [Additional Notes](#additional-notes)\n    - [Installing in Docker](#installing-in-docker)\n      - [Installing in Docker for CICD-Jobs](#installing-in-docker-for-cicd-jobs)\n    - [Troubleshooting on Linux](#troubleshooting-on-linux)\n    - [Troubleshooting on macOS](#troubleshooting-on-macos)\n    - [Ansible](#ansible)\n  - [Verify Installation](#verify-installation)\n  - [Important Notes](#important-notes)\n  - [Git Install](#git-install)\n  - [Manual Install](#manual-install)\n  - [Manual Upgrade](#manual-upgrade)\n- [Usage](#usage)\n  - [Long-term Support](#long-term-support)\n  - [Migrating Global Packages While Installing](#migrating-global-packages-while-installing)\n  - [Default Global Packages From File While Installing](#default-global-packages-from-file-while-installing)\n  - [io.js](#iojs)\n  - [System Version of Node](#system-version-of-node)\n  - [Listing Versions](#listing-versions)\n  - [Setting Custom Colors](#setting-custom-colors)\n    - [Persist",
+      "scores": {
+        "novelty": 0.3274,
+        "health": 0.75,
+        "relevance": 0.7798,
+        "author_rep": 0.0,
+        "gem_score": 0.5271
+      },
+      "concepts": [
+        "-",
+        "nvm",
+        "install",
+        "https",
+        "bash",
+        "node",
+        "run",
+        "#"
+      ]
+    }
+  ],
+  "discovery_params": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "html"
+    ],
+    "custom_queries": [],
+    "days": 180,
+    "licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "GPL-3.0",
+      "GPL-2.0",
+      "LGPL-3.0",
+      "MPL-2.0",
+      "ISC",
+      "Unlicense",
+      "0BSD"
+    ],
+    "max": 30,
+    "explore_longtail": false,
+    "max_stars": 100,
+    "min_health": 0.1,
+    "require_ci": false,
+    "require_tests": false,
+    "authorsig": false,
+    "embed_provider": "sbert",
+    "embed_model": "thenlper/gte-small",
+    "embed_max_chars": 8000,
+    "goal": "find solution to discover......",
+    "w_novelty": 0.35,
+    "w_health": 0.25,
+    "w_relevance": 0.25,
+    "w_author": 0.05,
+    "w_diversity": 0.15,
+    "probe_limit": 20,
+    "exclude_processed": true,
+    "use_cache": false
+  },
+  "metrics": {
+    "topics": [
+      "machine learning",
+      "docker",
+      "rust",
+      "html"
+    ],
+    "days": 180,
+    "explore_longtail": false,
+    "probe_limit": 20,
+    "candidates": 10,
+    "probed": 10,
+    "selected": 6,
+    "weights": {
+      "novelty": 0.35,
+      "health": 0.25,
+      "relevance": 0.25,
+      "author": 0.05,
+      "diversity": 0.15
+    }
+  },
+  "blueprint": {
+    "title": "GitRecombo — Out‑of‑Scale Blueprint",
+    "summary": "Recombination of recent GitHub innovations with long-tail exploration, health/reputation signals, and optional semantic relevance.",
+    "sources": [
+      {
+        "name": "electron/electron",
+        "url": "https://github.com/electron/electron",
+        "license": "MIT",
+        "role": "module (C++)",
+        "novelty_score": 0.7109,
+        "relevance": 0.7583,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "electron",
+          "https",
+          ".",
+          "##",
+          "windows",
+          "binaries",
+          "see",
+          ". ##"
+        ],
+        "gem_score": 0.7759
+      },
+      {
+        "name": "storybookjs/storybook",
+        "url": "https://github.com/storybookjs/storybook",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.681,
+        "relevance": 0.7648,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "style flat-square",
+          "flat-square color",
+          "src https",
+          "style",
+          "color",
+          "href https",
+          "img src"
+        ],
+        "gem_score": 0.6422
+      },
+      {
+        "name": "ChatGPTNextWeb/NextChat",
+        "url": "https://github.com/ChatGPTNextWeb/NextChat",
+        "license": "MIT",
+        "role": "module (TypeScript)",
+        "novelty_score": 0.5921,
+        "relevance": 0.787,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "-",
+          "- x",
+          "img src",
+          "src https",
+          "x",
+          "/",
+          "##"
+        ],
+        "gem_score": 0.6181
+      },
+      {
+        "name": "gin-gonic/gin",
+        "url": "https://github.com/gin-gonic/gin",
+        "license": "MIT",
+        "role": "module (Go)",
+        "novelty_score": 0.4856,
+        "relevance": 0.7609,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "https",
+          "ns/op b/op",
+          "b/op allocs/op",
+          "gin",
+          "go",
+          "ns/op",
+          "b/op"
+        ],
+        "gem_score": 0.577
+      },
+      {
+        "name": "microsoft/Web-Dev-For-Beginners",
+        "url": "https://github.com/microsoft/Web-Dev-For-Beginners",
+        "license": "MIT",
+        "role": "module (JavaScript)",
+        "novelty_score": 0.5716,
+        "relevance": 0.7822,
+        "health_score": 0.5,
+        "author_rep": 0.0,
+        "concepts": [
+          "https",
+          "github",
+          "-",
+          "style social",
+          "social label",
+          "https //aka.ms/genai-js-course",
+          "ai",
+          "style"
+        ],
+        "gem_score": 0.5466
+      },
+      {
+        "name": "nvm-sh/nvm",
+        "url": "https://github.com/nvm-sh/nvm",
+        "license": "MIT",
+        "role": "module (Shell)",
+        "novelty_score": 0.3274,
+        "relevance": 0.7798,
+        "health_score": 0.75,
+        "author_rep": 0.0,
+        "concepts": [
+          "-",
+          "nvm",
+          "install",
+          "https",
+          "bash",
+          "node",
+          "run",
+          "#"
+        ],
+        "gem_score": 0.5271
+      }
+    ],
+    "architecture_ascii": "[1] electron/electron  →  [2] storybookjs/storybook  →  [3] ChatGPTNextWeb/NextChat  →  [4] gin-gonic/gin  →  [5] microsoft/Web-Dev-For-Beginners  →  [6] nvm-sh/nvm\n            ↓\n        [ Orchestrator ]",
+    "seed_commands": [
+      "mkdir -p app/{core,modules,scripts}",
+      "echo '# Out-of-scale seed' > README.md",
+      "python -m venv .venv && source .venv/bin/activate || .venv\\Scripts\\activate",
+      "pip install -U uv pip wheel"
+    ],
+    "project_tree": [
+      "app/",
+      "app/core/",
+      "app/modules/",
+      "app/scripts/bootstrap.sh",
+      "README.md"
+    ],
+    "why_it_works": [
+      "Novelty + Health + Author signals + Semantic relevance elevate hidden gems.",
+      "Diversity bonus avoids conceptual duplicates when embeddings are enabled.",
+      "Permissive licensing keeps integration safe and fast."
+    ],
+    "metrics": {
+      "topics": [
+        "machine learning",
+        "docker",
+        "rust",
+        "html"
+      ],
+      "days": 180,
+      "explore_longtail": false,
+      "probe_limit": 20,
+      "candidates": 10,
+      "probed": 10,
+      "selected": 6,
+      "weights": {
+        "novelty": 0.35,
+        "health": 0.25,
+        "relevance": 0.25,
+        "author": 0.05,
+        "diversity": 0.15
+      }
+    }
+  }
+}
