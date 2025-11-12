@@ -312,7 +312,7 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
     
     if openai_key:
         try:
-            from .llm import openai_recombine
+            from llm import openai_recombine
             import tempfile
             
             print("[INFO] OpenAI key found, starting LLM analysis...")
@@ -443,7 +443,7 @@ other architects might miss."""
     print("\n\n📚 PHASE 3: ENRICHMENT (fetching READMEs)")
     print("-" * 80)
     
-    from .discover import get_readme_text
+    from discover import get_readme_text
     
     enriched_sources = []
     for src in sources:
