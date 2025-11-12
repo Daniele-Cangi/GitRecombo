@@ -1015,7 +1015,7 @@ class GitRecomboGUI:
             self.log_message("🔍 Avvio GitRecombo ultra_autonomous...")
             self.log_message("Questo potrebbe richiedere 3-15 minuti...")
 
-            cmd = [sys.executable, "-m", "gitrecombo.ultra_autonomous", "--config", "config_lightweight.json"]
+            cmd = [sys.executable, "ultra_autonomous.py", "--config", "config_lightweight.json"]
             
             # Aggiungi flag per escludere repository già analizzati
             if self.skip_processed_var.get():
