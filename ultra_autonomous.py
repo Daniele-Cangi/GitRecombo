@@ -19,8 +19,18 @@ from datetime import datetime
 # Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    # Only re-wrap stdout/stderr when necessary. Guard against double-wrapping
+    # which can close underlying buffers and raise "I/O operation on closed file".
+    try:
+        out_enc = getattr(sys.stdout, "encoding", None)
+        err_enc = getattr(sys.stderr, "encoding", None)
+        if not out_enc or out_enc.lower() != "utf-8":
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if not err_enc or err_enc.lower() != "utf-8":
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        # If anything goes wrong (no buffer attribute, already wrapped, etc.), skip re-wrap
+        pass
 
 # Load .env
 try:
@@ -35,8 +45,8 @@ from discover import discover
 DEFAULT_DISCOVERY_CONFIG = {
     "topics": [
         "networking",
-        "database",
-        "devops",
+        "drone",
+        "mml",
     ],
     "goal": (
         "Discover cutting-edge repositories in infrastructure and developer tooling that enable "
@@ -54,7 +64,7 @@ DEFAULT_DISCOVERY_CONFIG = {
     "w_relevance": 0.25,
     "w_diversity": 0.10,
     "use_embeddings": True,
-    "embedding_model": "Alibaba-NLP/gte-large-en-v1.5",
+    "embedding_model": "thenlper/gte-small",
     "require_ci": False,
     "require_tests": False,
     "authorsig": True,
@@ -109,10 +119,17 @@ def load_discovery_config(config_file: str | None) -> dict:
 
     return cfg
 
-def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: bool = False):
+def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: bool = False, exclude_processed: bool = False, skip_llm_insertion: bool = False):
     """
     Discovery ultra potenziato con discover.py full mode
     Supports loading config from JSON file for GUI integration
+    
+    Args:
+        use_embeddings: Enable semantic embeddings for relevance scoring
+        config_file: Path to JSON config file (for GUI integration)
+        no_cache: Skip repository cache consultation
+        exclude_processed: Skip repositories that have already been analyzed
+        skip_llm_insertion: Skip LLM insertion in recombination (conservative mode)
     """
     print("\n🚀 GITRECOMBO ULTRA AUTONOMOUS MODE")
     print("="*80)
@@ -123,10 +140,7 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
         print("❌ GITHUB_TOKEN or GITHUB_PERSONAL_ACCESS_TOKEN not set")
         return None
     
-    openai_key = os.getenv('OPENAI_API_KEY')
-    if not openai_key:
-        print("❌ OPENAI_API_KEY not set")
-        return None
+    openai_key = os.getenv('OPENAI_API_KEY')  # Optional for goal refinement
     
     # Load config from file if provided (GUI mode)
     cfg = load_discovery_config(config_file)
@@ -165,10 +179,36 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
     print(f"🔬 Embeddings: {'ENABLED' if use_embeddings else 'DISABLED'}")
     print()
     
+    # Verify GitHub token early and print concise diagnostic (masked)
+    def verify_github_token(tok: str) -> bool:
+        """Verify token by calling /user and print masked login/status.
+
+        Returns True if token appears valid (HTTP 200), False otherwise.
+        """
+        import requests
+        try:
+            h = {"Authorization": f"token {tok}", "User-Agent": "gitrecombo-cli"}
+            r = requests.get("https://api.github.com/user", headers=h, timeout=10)
+            if r.status_code == 200:
+                try:
+                    js = r.json()
+                    login = js.get("login")
+                    print(f"[AUTH] GitHub token valid for user: {login}")
+                except Exception:
+                    print("[AUTH] GitHub token appears valid (200 OK)")
+                return True
+            else:
+                print(f"[AUTH] Token verification failed: {r.status_code} {r.reason}")
+                return False
+        except Exception as exc:
+            print(f"[AUTH] Token verification error: {exc}")
+            return False
+
     # Parametri discover.py (usa config se caricato, altrimenti defaults)
     discover_params = {
         "token": token,
         "topics": topics,
+        "custom_queries": cfg.get("custom_queries"),  # Pass custom queries from config if provided
         "days": days,
         "licenses": licenses,
         "max": max_repos,
@@ -188,9 +228,9 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
         "w_author": 0.05,     # Trust signal
         "w_diversity": w_diversity,
         "probe_limit": probe_limit,
-        # If no_cache is True, don't exclude processed repos; otherwise exclude previously processed
-        "exclude_processed": (not no_cache),
-        # use_cache is the opposite of no_cache: when False we bypass cache reads
+        # Exclude already processed repos if requested (e.g., when skipping analyzed repos)
+        "exclude_processed": exclude_processed,
+        # use_cache is for readme/metadata cache: when False we bypass cache reads
         "use_cache": (not no_cache),
     }
     
@@ -258,80 +298,143 @@ def ultra_autonomous_discovery(use_embeddings=True, config_file=None, no_cache: 
         print(f"   Concepts: {', '.join(src['concepts'][:5])}")
     
     # ====================================================================
-    # PHASE 2: GOAL REFINEMENT CON GPT-5
+    # PHASE 2: GOAL REFINEMENT WITH GPT-5
     # ====================================================================
     
-    print("\n\n🧠 PHASE 2: GOAL REFINEMENT WITH GPT-5")
+    print("\n\n[LLM] PHASE 2: DEEP ANALYSIS WITH GPT-5")
     print("-" * 80)
     
-    from openai import OpenAI
-    client = OpenAI(api_key=openai_key)
+    refined_goal = discovery_goal
+    repository_synergy = ""
+    technical_architecture = ""
+    expected_impact = ""
+    innovation_analysis = ""
     
-    # Prepara summary per GPT-5
-    repos_summary = []
-    for src in sources:
-        repos_summary.append({
-            "name": src['name'],
-            "role": src.get('role', 'module'),
-            "concepts": src['concepts'][:8],
-            "novelty": src['novelty_score'],
-            "health": src['health_score'],
-            "relevance": src['relevance']
-        })
-    
-    refinement_prompt = f"""You discovered these {len(repos_summary)} cutting-edge repositories:
+    if openai_key:
+        try:
+            from .llm import openai_recombine
+            import tempfile
+            
+            print("[INFO] OpenAI key found, starting LLM analysis...")
+            
+            # Prepare context for LLM
+            sources_context = json.dumps([
+                {
+                    "name": src['name'],
+                    "url": src['url'],
+                    "description": src.get('description', ''),
+                    "concepts": src.get('concepts', [])[:5],
+                    "gem_score": src.get('gem_score', 0)
+                }
+                for src in sources
+            ], ensure_ascii=False, indent=2)
+            
+            # Determine LLM insertion instruction based on skip_llm_insertion flag
+            if skip_llm_insertion:
+                llm_insertion_instruction = """CRITICAL: Keep the architecture focused on the ACTUAL selected repositories.
+Do NOT suggest adding AI/LLM components unless they are:
+1) Directly mentioned in one of the selected repositories
+2) Essential to solve a key problem identified in the goal
+3) Directly relevant to the selected technologies
 
-{json.dumps(repos_summary, indent=2)}
+This is a conservative mode. Prioritize solutions that use the existing repos,
+not solutions that would require adding new paradigms or technologies."""
+            else:
+                llm_insertion_instruction = """Think creatively about innovative ways to integrate components.
+You can suggest new architectural patterns, novel combinations, and even
+the addition of complementary technologies (including AI/LLM components)
+if they significantly enhance the solution.
 
-Your mission: Analyze this COMBINATION and explain its breakthrough potential.
+Balance innovation with practicality. Suggest bold combinations that
+other architects might miss."""
+            
+            # Read base prompt template (use absolute path relative to this file)
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            prompt_path = os.path.join(current_dir, 'prompts', 'goal_refinement_controlled.prompt.txt')
+            
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                prompt_template = f.read()
+            
+            # Create refinement prompt with dynamic LLM insertion instruction + original topics
+            topics_context = f"ORIGINAL TOPICS: {', '.join(topics)}\n\n"
+            refinement_prompt = topics_context + prompt_template.format(
+                DISCOVERY_GOAL=discovery_goal,
+                SOURCES_CONTEXT=sources_context,
+                LLM_INSERTION_INSTRUCTION=llm_insertion_instruction
+            )
+            
+            # Write prompt to temp file
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8', suffix='.txt') as tf:
+                tf.write(refinement_prompt)
+                prompt_file = tf.name
+            
+            try:
+                # Call LLM
+                result = openai_recombine(
+                    discovery_goal,
+                    [{"sources": sources, "blueprint": blueprint}],
+                    prompt_file,
+                    schema=None,
+                    model="gpt-5",
+                    max_tokens=8000,  # Increased for GPT-5 reasoning + output
+                    json_mode=False
+                )
+                
+                # Parse result
+                if result:
+                    try:
+                        # Try to extract JSON from result
+                        import re
+                        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                        if json_match:
+                            analysis = json.loads(json_match.group())
+                            refined_goal = analysis.get('refined_goal', discovery_goal)
+                            repository_synergy = analysis.get('repository_synergy', '')
+                            technical_architecture = analysis.get('technical_architecture', '')
+                            expected_impact = analysis.get('expected_impact', '')
+                            innovation_analysis = analysis.get('innovation_analysis', '')
+                            
+                            print(f"[OK] Deep analysis completed with GPT-5 ({len(result)} chars)")
+                            print(f"     Refined goal: {refined_goal}")
+                            print(f"     LLM Insertion Mode: {'CONSERVATIVE' if skip_llm_insertion else 'CREATIVE'}")
+                            print(f"\n📊 COMPREHENSIVE ANALYSIS:")
+                            print(f"\n🔄 Repository Synergy:\n{repository_synergy}\n")
+                            print(f"🏗️ Technical Architecture:\n{technical_architecture}\n")
+                            print(f"💡 Expected Impact:\n{expected_impact}\n")
+                            print(f"⭐ Innovation Analysis:\n{innovation_analysis}\n")
+                        else:
+                            print(f"[WARN] Could not extract JSON from LLM response")
+                            print(f"       Response: {result[:200]}...")
+                            refined_goal = discovery_goal
+                            repository_synergy = ''
+                            technical_architecture = ''
+                            expected_impact = ''
+                            innovation_analysis = ''
+                    except json.JSONDecodeError as e:
+                        print(f"[WARN] JSON parse error: {e}")
+                        print(f"       Raw result: {result[:300]}...")
+                        refined_goal = discovery_goal
+                        repository_synergy = ''
+                        technical_architecture = ''
+                        expected_impact = ''
+                        innovation_analysis = ''
 
-Return JSON with:
-{{
-  "goal": "BRIEF statement (1-2 sentences, ~50 words). What to build with this combo.",
-  "why_these_repos": "EXTENSIVE technical analysis (400-600 words). Focus on:
-    - What NOVEL capabilities emerge from combining THESE specific repos?
-    - HOW do they integrate? (specific APIs, patterns, data flows)
-    - WHY is THIS combination better than alternatives?
-    - What was IMPOSSIBLE before but is now POSSIBLE?
-    - Cite concrete features from each repo
-    - Explain technical synergies in detail",
-  "expected_impact": "EXTENSIVE breakthrough analysis (400-600 words). Focus on:
-    - What NON-OBVIOUS innovations does this combo enable?
-    - What competitive advantages emerge from this recombination?
-    - What problems can ONLY be solved with this exact combination?
-    - Quantified outcomes with specific metrics
-    - Real-world use cases unlocked by this integration"
-}}
-
-CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repos + expected_impact). The goal should be minimal - just 1-2 sentences.
-"""
-    
-    print("⏳ Refining goal with chatgpt-4o-latest...\n")
-    
-    completion = client.chat.completions.create(
-        model='chatgpt-4o-latest',  # 🔥 FIX: Actual OpenAI model name
-        messages=[
-            {"role": "system", "content": "You are an expert in AI/ML infrastructure and innovation strategy."},
-            {"role": "user", "content": refinement_prompt}
-        ],
-        max_completion_tokens=2000,  # Goal refinement: up to 2K tokens
-        temperature=0.7,
-        response_format={"type": "json_object"}
-    )
-    
-    refinement = json.loads(completion.choices[0].message.content)
-    refined_goal = refinement['goal']
-    
-    print("✅ GOAL REFINED!")
-    print("="*80)
-    print(f"🎯 Refined Goal:")
-    print(f"   {refined_goal}")
-    print()
-    print(f"💡 Why These Repos:")
-    print(f"   {refinement['why_these_repos']}")
-    print()
-    print(f"🚀 Expected Impact:")
-    print(f"   {refinement['expected_impact']}")
+                else:
+                    print("[WARN] LLM returned empty result")
+                    
+            finally:
+                try:
+                    os.remove(prompt_file)
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            print(f"[WARN] Phase 2 LLM analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            refined_goal = discovery_goal
+    else:
+        print("[INFO] OPENAI_API_KEY not set - skipping LLM goal refinement")
     
     # ====================================================================
     # PHASE 3: ENRICHMENT - Fetch README snippets
@@ -340,7 +443,7 @@ CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repo
     print("\n\n📚 PHASE 3: ENRICHMENT (fetching READMEs)")
     print("-" * 80)
     
-    from discover import get_readme_text
+    from .discover import get_readme_text
     
     enriched_sources = []
     for src in sources:
@@ -384,7 +487,10 @@ CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repo
         "discovery_method": "discover.py_full_mode",
         "embeddings_used": use_embeddings,
         "refined_goal": refined_goal,
-        "goal_refinement": refinement,
+        "repository_synergy": repository_synergy,
+        "technical_architecture": technical_architecture,
+        "expected_impact": expected_impact,
+        "innovation_analysis": innovation_analysis,
         "sources": enriched_sources,
         "discovery_params": {
             k: v for k, v in discover_params.items() 
@@ -394,7 +500,10 @@ CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repo
         "blueprint": blueprint
     }
     
-    output_file = f"ultra_autonomous_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    # Create missions directory if it doesn't exist
+    os.makedirs("missions", exist_ok=True)
+    
+    output_file = f"missions/ultra_autonomous_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(mission, f, indent=2, ensure_ascii=False)
     
@@ -402,7 +511,7 @@ CRITICAL: Spend 90% of tokens analyzing THE RECOMBINATION ITSELF (why_these_repo
     print("🎉 ULTRA AUTONOMOUS DISCOVERY COMPLETED")
     print("="*80)
     print(f"💾 Mission saved to: {output_file}")
-    print(f"🎯 Goal: {refined_goal[:100]}...")
+    print(f"🎯 Goal: {refined_goal}")
     print(f"📚 Sources: {len(enriched_sources)}")
     
     if enriched_sources:
@@ -425,12 +534,16 @@ def main():
     parser = argparse.ArgumentParser(description='GitRecombo Ultra Autonomous Discovery')
     parser.add_argument('--no-embeddings', action='store_true', 
                         help='Disable embeddings (faster but less precise)')
-    parser.add_argument('--config', type=str, default=None,
-                        help='Path to JSON config file (for GUI integration)')
+    parser.add_argument('--config', type=str, default='config_lightweight.json',
+                        help='Path to JSON config file (default: config_lightweight.json)')
     parser.add_argument('--no-cache', action='store_true',
                         help='Do not consult or mark processed repos; force fresh discovery')
     parser.add_argument('--clear-processed', action='store_true',
                         help='Clear the processed repos markers before running')
+    parser.add_argument('--exclude-processed', action='store_true',
+                        help='Skip repositories that have already been analyzed/processed')
+    parser.add_argument('--skip-llm-insertion', action='store_true',
+                        help='Skip LLM insertion in recombination analysis')
     parser.add_argument('--search-only', action='store_true',
                         help='Run only the discovery/search phase and exit (no LLM refinement)')
     args = parser.parse_args()
@@ -438,11 +551,44 @@ def main():
     use_embeddings = not args.no_embeddings
     no_cache = bool(args.no_cache)
     clear_processed = bool(args.clear_processed)
+    exclude_processed = bool(args.exclude_processed)
+    skip_llm_insertion = bool(args.skip_llm_insertion)
+
+    # Auto-detect config changes and invalidate cache accordingly
+    if not no_cache:
+        try:
+            import hashlib
+            config_path = args.config
+            
+            if os.path.exists(config_path):
+                # Calculate current config hash
+                with open(config_path, 'rb') as f:
+                    current_hash = hashlib.md5(f.read()).hexdigest()
+                
+                # Check against saved hash
+                cache_hash_file = '.config_hash'
+                previous_hash = None
+                
+                if os.path.exists(cache_hash_file):
+                    with open(cache_hash_file, 'r') as f:
+                        previous_hash = f.read().strip()
+                
+                # If config changed, auto-invalidate cache
+                if previous_hash and previous_hash != current_hash:
+                    print("🔄 Config file changed detected - invalidating cache automatically\n")
+                    no_cache = True
+                
+                # Save current hash for next run
+                with open(cache_hash_file, 'w') as f:
+                    f.write(current_hash)
+                    
+        except Exception as e:
+            print(f"⚠️ Config change detection failed: {e}")
 
     # If requested, clear processed markers (non-destructive to repo metadata)
     if clear_processed:
         try:
-            from repo_cache import RepoCache
+            from gitrecombo.repo_cache import RepoCache
             rc = RepoCache()
             deleted = rc.purge_processed_older_than(days=0)  # delete all processed markers
             print(f"📦 Cleared {deleted} processed markers from cache")
@@ -452,7 +598,7 @@ def main():
     # If search-only requested, run discovery and exit before LLM stage
     if args.search_only:
         print("\n🔎 Running search-only mode (discovery)\n")
-        mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache)
+        mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache, exclude_processed=exclude_processed, skip_llm_insertion=skip_llm_insertion)
         # ultra_autonomous_discovery returns the mission dict; exit after reporting
         if mission:
             print("\n✅ Search-only discovery completed. Repos found:")
@@ -462,7 +608,7 @@ def main():
         else:
             sys.exit(1)
 
-    mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache)
+    mission = ultra_autonomous_discovery(use_embeddings=use_embeddings, config_file=args.config, no_cache=no_cache, exclude_processed=exclude_processed, skip_llm_insertion=skip_llm_insertion)
     
     if mission:
         print("\n✅ SUCCESS! Next steps:")
